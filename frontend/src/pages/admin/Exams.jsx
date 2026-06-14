@@ -15,10 +15,21 @@ import { Plus, Trash2, Pencil, Copy, ChartBar, Save } from "lucide-react";
 
 const blank = () => ({
   name: "", description: "", type: "mock", duration_minutes: 60,
+  start_at: "", end_at: "",
   passing_marks: 0, instructions: "Read each question carefully. Marks: +4 correct, -1 wrong (numerical: no negative).",
   randomize: false, negative_marking: true, question_ids: [],
   allowed_tab_switches: 3, enable_webcam: true, is_published: false, price: 0,
 });
+
+// Convert ISO string ↔ datetime-local input value (no timezone offset)
+const isoToLocal = (s) => {
+  if (!s) return "";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const localToIso = (v) => (v ? new Date(v).toISOString() : null);
 
 export default function Exams() {
   const [rows, setRows] = useState([]);
@@ -43,8 +54,9 @@ export default function Exams() {
 
   const submit = async () => {
     try {
-      if (editingId) await api.put(`/exams/${editingId}`, form);
-      else await api.post("/exams", form);
+      const payload = { ...form, start_at: localToIso(form.start_at), end_at: localToIso(form.end_at) };
+      if (editingId) await api.put(`/exams/${editingId}`, payload);
+      else await api.post("/exams", payload);
       toast.success(editingId ? "Exam updated" : "Exam created");
       setOpen(false); setEditingId(null); setForm(blank()); load();
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
@@ -112,6 +124,17 @@ export default function Exams() {
                   <div><Label>Price (₹)</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} /></div>
                 </div>
                 <div><Label>Instructions</Label><Textarea rows={4} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
+                  <div>
+                    <Label>Start at (optional — schedule)</Label>
+                    <Input type="datetime-local" value={isoToLocal(form.start_at)} onChange={(e) => setForm({ ...form, start_at: e.target.value })} className="rounded-sm mono" data-testid="exam-start-at" />
+                  </div>
+                  <div>
+                    <Label>End at (optional — window closes)</Label>
+                    <Input type="datetime-local" value={isoToLocal(form.end_at)} onChange={(e) => setForm({ ...form, end_at: e.target.value })} className="rounded-sm mono" data-testid="exam-end-at" />
+                  </div>
+                  <div className="col-span-2 text-xs text-muted-foreground mono">Leave blank for always-available. Times are stored in UTC.</div>
+                </div>
               </TabsContent>
 
               <TabsContent value="questions" className="space-y-3">
@@ -190,6 +213,12 @@ export default function Exams() {
               <div><div className="overline">Duration</div><div className="mono mt-1">{e.duration_minutes} min</div></div>
               <div><div className="overline">Questions</div><div className="mono mt-1">{(e.question_ids || []).length}</div></div>
             </div>
+            {(e.start_at || e.end_at) && (
+              <div className="mt-3 text-[11px] mono text-muted-foreground border-t border-border pt-2 space-y-0.5">
+                {e.start_at && <div>↗ Opens: {new Date(e.start_at).toLocaleString()}</div>}
+                {e.end_at && <div>↘ Closes: {new Date(e.end_at).toLocaleString()}</div>}
+              </div>
+            )}
             <div className="flex gap-1 mt-4 flex-wrap">
               <Button size="sm" variant="outline" onClick={() => { setEditingId(e.id); setForm({ ...blank(), ...e }); setOpen(true); }} data-testid={`exam-edit-${e.id}`}><Pencil className="w-3 h-3 mr-1" />Edit</Button>
               <Button size="sm" variant="outline" onClick={() => togglePub(e)} data-testid={`exam-publish-${e.id}`}>{e.is_published ? "Unpublish" : "Publish"}</Button>

@@ -1,0 +1,35 @@
+{
+  "summary": "Backend-only retest of the two new features: (1) Live exam scheduling (start_at/end_at enforcement on POST /api/exams/start) and (2) Manual evaluation flow for subjective questions (short/long/file) including new admin endpoints GET /api/exams/evaluation/pending, GET /api/exams/evaluation/{id}, POST /api/exams/evaluation/{id}. Added 10 new pytest cases (TestExamScheduling: 3, TestManualEvaluation: 7) — all 10 passed. Regression on TestExamCRUD + TestAttemptFlow (MCQ JEE Main seeded exam) also passed, confirming backward compatibility.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_exams.py save_evaluation correctly re-derives subject_stats from a snapshot of questions on the attempt, but it does NOT touch subjective items where admin omitted that qid in evaluations — fine for current use. Edge case: if admin posts evaluations with qid pointing to a non-subjective question, the code will still mutate that pq because there's no type guard. Low priority — main agent may add a check `if pq.get('type') in SUBJECTIVE_TYPES`.",
+    "Schedule enforcement message detail format leaks raw ISO string ('Exam opens at 2026-...+00:00'). Acceptable for now; UI can format on display.",
+    "_parse_iso silently returns None on bad input — could lead to bypass if exam.start_at is malformed. Consider logging or validating at write-time via Pydantic field validator."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 new tests + regression on existing TestExamCRUD/TestAttemptFlow all pass)",
+    "frontend": "N/A (skipped per request)"
+  },
+  "test_credentials": "Admin admin@gyansai.com/admin123, Demo student demo/demo123 (fresh TEST_* students created per test to avoid one-shot lock)",
+  "seed_data_creation": "Each test class fixture creates and tears down its own TEST_* exam + TEST_* student + (for subjective) one TEST_ question. All cleaned up via DELETE in fixture teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All new feature requirements from the review_request are verified end-to-end: (1) future start_at → 403 with 'opens at'; (2) past end_at → 403 with 'closed'; (3) within window → 200; (4) long question auto-submits as pending_review with score=0, max_score=10, has_pending_review=true; (5) evaluation/pending lists it; (6) evaluation/{id} returns rich item with title/given/model_answer/max_marks=10/current_marks=0/result='pending_review'; (7) POST evaluation with marks=7 → score=7, result='partial', pending_review=0, has_pending_review=false, comment saved; (8) attempt no longer in pending list; (9) marks>max → 400; (10) student token cannot access /evaluation/pending → 403; (11) MCQ regression on seeded JEE exam still passes.",
+  "rca of the issue": "No issues found."
+}

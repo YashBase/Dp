@@ -21,6 +21,14 @@ export default function Exams() {
     }
   };
 
+  const scheduleInfo = (e) => {
+    const now = new Date();
+    if (e.start_at && new Date(e.start_at) > now) return { kind: "upcoming", text: `Opens ${new Date(e.start_at).toLocaleString()}` };
+    if (e.end_at && new Date(e.end_at) < now) return { kind: "closed", text: `Closed ${new Date(e.end_at).toLocaleString()}` };
+    if (e.end_at) return { kind: "live", text: `Closes ${new Date(e.end_at).toLocaleString()}` };
+    return null;
+  };
+
   return (
     <div className="p-8 space-y-6">
       <header>
@@ -37,6 +45,11 @@ export default function Exams() {
               <Badge variant="outline" className="rounded-sm">{e.type}</Badge>
               {e.attempted && <Badge className="rounded-sm">ATTEMPTED</Badge>}
               {e.price > 0 && <Badge variant="secondary" className="rounded-sm">₹{e.price}</Badge>}
+              {(() => { const s = scheduleInfo(e); return s ? (
+                <Badge variant={s.kind === "closed" ? "destructive" : (s.kind === "upcoming" ? "secondary" : "default")} className="rounded-sm mono text-[10px]">
+                  {s.kind === "upcoming" ? "UPCOMING" : s.kind === "closed" ? "CLOSED" : "LIVE"}
+                </Badge>
+              ) : null; })()}
             </div>
             <h3 className="heading text-lg font-semibold mt-3">{e.name}</h3>
             <p className="text-xs text-muted-foreground mt-1 line-clamp-2 flex-1">{e.description}</p>
@@ -48,18 +61,25 @@ export default function Exams() {
                   <Trophy className="w-3 h-3" /> Last score: <span className="mono font-bold">{e.last_score}</span>
                 </div>
               )}
+              {(() => { const s = scheduleInfo(e); return s ? (
+                <div className={`flex items-center gap-1.5 col-span-2 mono ${s.kind === "closed" ? "text-destructive" : "text-muted-foreground"}`}>
+                  <Clock className="w-3 h-3" /> {s.text}
+                </div>
+              ) : null; })()}
             </div>
             <div className="flex gap-2 mt-4">
-              {!e.attempted && (
-                <Button className="flex-1 rounded-sm" onClick={() => start(e)} data-testid={`start-exam-btn-${e.id}`}>
-                  Start Exam
-                </Button>
-              )}
-              {e.attempted && (
-                <Button variant="outline" className="flex-1 rounded-sm" onClick={() => toast.info("Submitted — check results from dashboard.")}>
-                  Completed
-                </Button>
-              )}
+              {(() => {
+                const s = scheduleInfo(e);
+                const disabled = e.attempted || s?.kind === "upcoming" || s?.kind === "closed";
+                if (e.attempted) {
+                  return <Button variant="outline" className="flex-1 rounded-sm" onClick={() => toast.info("Submitted — check results from dashboard.")}>Completed</Button>;
+                }
+                return (
+                  <Button className="flex-1 rounded-sm" onClick={() => start(e)} disabled={disabled} data-testid={`start-exam-btn-${e.id}`}>
+                    {s?.kind === "upcoming" ? "Not yet open" : s?.kind === "closed" ? "Closed" : "Start Exam"}
+                  </Button>
+                );
+              })()}
             </div>
           </div>
         ))}

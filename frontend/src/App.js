@@ -13,6 +13,7 @@ const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
 const AdminStudents = lazy(() => import("@/pages/admin/Students"));
 const AdminQuestions = lazy(() => import("@/pages/admin/Questions"));
 const AdminExams = lazy(() => import("@/pages/admin/Exams"));
+const AdminEvaluation = lazy(() => import("@/pages/admin/Evaluation"));
 const AdminCourses = lazy(() => import("@/pages/admin/Courses"));
 const AdminTestSeries = lazy(() => import("@/pages/admin/TestSeries"));
 const AdminSettings = lazy(() => import("@/pages/admin/Settings"));
@@ -53,6 +54,7 @@ function App() {
               <Route path="students" element={<AdminStudents />} />
               <Route path="questions" element={<AdminQuestions />} />
               <Route path="exams" element={<AdminExams />} />
+              <Route path="evaluation" element={<AdminEvaluation />} />
               <Route path="courses" element={<AdminCourses />} />
               <Route path="test-series" element={<AdminTestSeries />} />
               <Route path="settings" element={<AdminSettings />} />

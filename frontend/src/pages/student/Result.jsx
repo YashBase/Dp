@@ -39,6 +39,11 @@ export default function Result() {
           <div className="overline">// Result</div>
           <h1 className="heading text-3xl font-bold mt-1">{d.exam_name}</h1>
           <p className="text-sm text-muted-foreground mt-1">Submitted {(d.submitted_at || "").slice(0, 19).replace("T", " ")} {d.submit_reason && d.submit_reason !== "manual" ? `· ${d.submit_reason}` : ""}</p>
+          {d.has_pending_review && (
+            <div className="mt-3 border border-[hsl(41_76%_51%)] bg-[hsl(41_76%_51%)]/10 text-foreground rounded-sm p-3 text-sm" data-testid="pending-review-banner">
+              <span className="font-semibold">Provisional score.</span> {d.pending_review} subjective answer{d.pending_review === 1 ? "" : "s"} pending teacher evaluation — your final score may change.
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-3 mt-6">
             <div className="border border-border p-4 rounded-sm">
               <Trophy className="w-4 h-4 text-primary" />
@@ -130,12 +135,17 @@ export default function Result() {
         <div className="overline mb-3">Answer key & solutions</div>
         <div className="space-y-2">
           {(d.per_question || []).map((p, i) => {
-            const cls = p.result === "correct" ? "border-[hsl(145_50%_41%)]" : p.result === "wrong" ? "border-destructive" : "border-border";
+            const cls = p.result === "correct" ? "border-[hsl(145_50%_41%)]"
+              : p.result === "wrong" ? "border-destructive"
+              : p.result === "pending_review" ? "border-[hsl(41_76%_51%)]"
+              : p.result === "partial" ? "border-[hsl(41_76%_51%)]"
+              : "border-border";
             return (
               <div key={i} className={`border-l-2 ${cls} pl-3 py-2`}>
                 <div className="text-sm">
-                  <span className="mono text-xs text-muted-foreground">Q{i + 1}</span> · You: <span className="mono">{JSON.stringify(p.given)}</span> · Correct: <span className="mono font-bold">{JSON.stringify(p.correct_answer)}</span> · <Badge variant="outline" className="rounded-sm">{p.result}</Badge> <span className="mono">({p.marks > 0 ? "+" : ""}{p.marks})</span>
+                  <span className="mono text-xs text-muted-foreground">Q{i + 1}</span> · You: <span className="mono">{JSON.stringify(p.given)}</span> {p.result !== "pending_review" && <>· Correct: <span className="mono font-bold">{JSON.stringify(p.correct_answer)}</span></>} · <Badge variant="outline" className="rounded-sm">{p.result}</Badge> <span className="mono">({p.marks > 0 ? "+" : ""}{p.marks}{p.max_marks ? ` / ${p.max_marks}` : ""})</span>
                 </div>
+                {p.comment && <div className="text-xs mt-1 border border-border bg-muted/30 p-2 rounded-sm">👩‍🏫 <span className="font-medium">Teacher:</span> {p.comment}</div>}
                 {p.explanation && <div className="text-xs text-muted-foreground mt-1">💡 {p.explanation}</div>}
               </div>
             );
