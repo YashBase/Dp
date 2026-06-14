@@ -254,7 +254,7 @@ async def store_snapshot(data: SnapshotIn, student=Depends(require_student)):
     # Hard cap ~200 KB base64 (= ~150 KB raw) per snapshot
     MAX_B64 = 200_000
     if len(b64) > MAX_B64:
-        b64 = b64[:MAX_B64]
+        raise HTTPException(status_code=413, detail=f"Snapshot too large (max {MAX_B64} chars base64). Capture at lower resolution/quality.")
     snap = {
         "id": new_id(),
         "attempt_id": data.attempt_id,
