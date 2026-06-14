@@ -1,0 +1,107 @@
+{
+  "project_name": "Gyansai Maths IIT Center Test Portal",
+  "domain": "Education & Examination SaaS",
+  "theme": "LIGHT_PRIMARY_WITH_DARK_MODE",
+  "archetype": "Archetype 4: Swiss & High-Contrast",
+  "emotional_tone": "Authoritative, Precise, Competitive, and High-Energy",
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "mono_data": "JetBrains Mono"
+    },
+    "rules": {
+      "headings": "Use tracking-tight for H1/H2. Never center by default. Left-aligned for analytical/academic rigor.",
+      "overline": "Uppercase, text-xs, tracking-[0.2em] for category tags (e.g., SUBJECT: PHYSICS).",
+      "body": "leading-relaxed for reading clarity in exam questions.",
+      "hierarchy": {
+        "h1": "text-4xl sm:text-5xl font-bold tracking-tight",
+        "h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+        "h3": "text-xl sm:text-2xl font-medium",
+        "body": "text-base",
+        "small": "text-sm text-muted-foreground"
+      }
+    }
+  },
+  "colors": {
+    "light_mode": {
+      "background": "#FAFAFA",
+      "surface": "#FFFFFF",
+      "primary": "#002FA7",
+      "primary_hover": "#00227A",
+      "accent_danger": "#E53E3E",
+      "accent_success": "#38A169",
+      "accent_warning": "#D69E2E",
+      "text_main": "#0A0A0A",
+      "text_muted": "#525252",
+      "border": "#E5E5E5"
+    },
+    "dark_mode": {
+      "background": "#050505",
+      "surface": "#121212",
+      "primary": "#3366FF",
+      "primary_hover": "#254EDB",
+      "accent_danger": "#FC8181",
+      "accent_success": "#68D391",
+      "accent_warning": "#F6E05E",
+      "text_main": "#F5F5F5",
+      "text_muted": "#A3A3A3",
+      "border": "#262626"
+    },
+    "rules": {
+      "primary_usage": "Use International Klein Blue (#002FA7) ONLY for primary actions (Start Exam, Buy Course, Submit). Do not use for decorative backgrounds.",
+      "contrast": "Adhere strictly to APCA contrast ratios. Ensure equations and reading materials are high-contrast. Never use pure #000000 for large background areas, use #050505."
+    }
+  },
+  "layout_and_spacing": {
+    "spacing_scale": "p-1, p-2, p-4, p-6, p-8, p-12, p-16, p-24",
+    "dashboard_grid": "Control Room Grid: grid-cols-1 md:grid-cols-3 lg:grid-cols-4 with tight gap-4 or gap-6. Every pixel utilized. h-full on children.",
+    "marketing_grid": "Bento Grid: Asymmetrical combinations, gap-8 to gap-12.",
+    "exam_portal_layout": "Strict 2-column or 3-column layout. Main content (Question) takes 75%, Question Palette takes 25%. Fixed height viewport (h-screen), overflow-y-auto strictly for question area.",
+    "alignment": "Left-aligned content. Only center marketing hero text if absolutely necessary."
+  },
+  "surface_styles": {
+    "cards": "Grid Borders: Flat backgrounds, 1px solid border, no shadow. Technical and precise. Expose the skeleton.",
+    "exam_palette": "Neumorphism avoided. Use solid borders and high contrast color codes for Not Visited (Gray), Answered (Green), Mark for Review (Warning Yellow).",
+    "glassmorphism": "Only for sticky navbars (backdrop-blur-xl bg-white/70 or bg-black/60) with 1px bottom border.",
+    "corners": "rounded-none or rounded-sm. Sharp edges convey precision and math.",
+    "hover_states": "Crisp translate-y-[-2px] with a sharp shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] (in light mode) for a brutalist/tactile feel. Dark mode uses white shadow."
+  },
+  "components": {
+    "buttons": "Square or rounded-sm. Solid primary color. High contrast.",
+    "inputs": "Shadcn standard but with rounded-sm and sharp focus rings (ring-2 ring-primary).",
+    "tables": "Dense. border-collapse. Alternating row colors for easy scanning of large student datasets.",
+    "charts": "Recharts. Use monochromatic blue scales with one contrasting accent (e.g., Red for negative marking) for clarity.",
+    "exam_timer": "Sticky top right. Use JetBrains Mono for numbers. Turns red (accent_danger) in last 5 minutes."
+  },
+  "motion_and_interactions": {
+    "page_transitions": "Instant or very fast fade. No bouncy animations. Serious academic tool.",
+    "hover": "Explicit hover text color changes (e.g., hover:bg-slate-900 hover:text-white).",
+    "question_navigation": "Instant transition. No sliding animations to prevent distraction.",
+    "accessibility": "Respect prefers-reduced-motion. High focus contrast."
+  },
+  "icons_and_assets": {
+    "library": "@phosphor-icons/react",
+    "rules": "Keep icons minimal. Use mathematical symbols where appropriate instead of generic icons."
+  },
+  "media": {
+    "hero_image": "https://images.unsplash.com/photo-1637589308599-3478cc55510d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHwyfHxpbmRpYW4lMjBzdHVkZW50JTIwc3R1ZHlpbmclMjBsYXB0b3B8ZW58MHx8fHwxNzgxNDE5ODcwfDA&ixlib=rb-4.1.0&q=85",
+    "hero_description": "A focused Indian student studying at a laptop, setting the tone for hard work and academic dedication.",
+    "classroom_background": "https://images.unsplash.com/photo-1580582932707-520aed937b7b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzV8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBjbGFzc3Jvb20lMjBlbXB0eXxlbnwwfHx8fDE3ODE0MTk4NzB8MA&ixlib=rb-4.1.0&q=85",
+    "math_texture": "https://images.unsplash.com/photo-1635372722656-389f87a941b7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDN8MHwxfHNlYXJjaHwxfHxtYXRoZW1hdGljcyUyMGVxdWF0aW9ucyUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzgxNDE5ODcwfDA&ixlib=rb-4.1.0&q=85",
+    "usage_instructions": "Use math_texture as a low-opacity (5-10%) overlay background for the hero section or login page. Use hero_image in the marketing page bento grid. Do not use placeholder images."
+  },
+  "testing_attributes": {
+    "rules": "All interactive elements MUST have data-testid. Examples: data-testid='start-exam-btn', data-testid='admin-login-tab', data-testid='question-palette-btn-4', data-testid='submit-exam-button'."
+  },
+  "instructions_to_main_agent": [
+    "Initialize Tailwind config with the specified colors and fonts.",
+    "Import Cabinet Grotesk, IBM Plex Sans, and JetBrains Mono via CDN or Fontsource.",
+    "Build the dashboard using pure grid layouts with 1px solid borders (The 'Technical' Look).",
+    "Do not use generic border-radius (e.g., rounded-xl) everywhere. Stick to rounded-sm or rounded-none.",
+    "For the exam portal, ensure the layout is rigid (no global page scrolling), only the question area should scroll.",
+    "Implement high-contrast states for the Question Palette: Answered = Green (#38A169), Not Visited = White/Gray, Marked for Review = Warning Yellow (#D69E2E).",
+    "Install @phosphor-icons/react. Add data-testid to every interactive component.",
+    "For charts, use Recharts with strict colors matching the theme."
+  ]
+}
