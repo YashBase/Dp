@@ -518,6 +518,8 @@ async def save_evaluation(attempt_id: str, payload: dict, _admin=Depends(require
     for pq in per_q:
         if pq["qid"] not in eval_map:
             continue
+        if pq.get("type") not in SUBJECTIVE_TYPES:
+            raise HTTPException(status_code=400, detail=f"Question {pq['qid']} is not a subjective question")
         e = eval_map[pq["qid"]]
         new_marks = float(e.get("marks") or 0)
         max_m = float(pq.get("max_marks") or 0)
