@@ -247,14 +247,22 @@ async def store_snapshot(data: SnapshotIn, student=Depends(require_student)):
     a = await db.attempts.find_one({"id": data.attempt_id, "student_id": student["id"]}, {"_id": 0})
     if not a:
         raise HTTPException(status_code=404, detail="Attempt not found")
+    # Strip data URL prefix if present and cap size
+    b64 = data.image_base64 or ""
+    if "," in b64 and b64.lstrip().lower().startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    # Hard cap ~200 KB base64 (= ~150 KB raw) per snapshot
+    MAX_B64 = 200_000
+    if len(b64) > MAX_B64:
+        b64 = b64[:MAX_B64]
     snap = {
         "id": new_id(),
         "attempt_id": data.attempt_id,
         "student_id": student["id"],
         "at": iso(now_utc()),
         "violation": data.violation,
-        # We do NOT store the full image to keep DB small — store size only
-        "size_bytes": len(data.image_base64),
+        "size_bytes": len(b64),
+        "image_base64": b64,
     }
     await db.proctor_snapshots.insert_one(snap)
     if data.violation:
@@ -263,6 +271,8 @@ async def store_snapshot(data: SnapshotIn, student=Depends(require_student)):
             {"$push": {"violations": {"id": new_id(), "type": data.violation, "at": iso(now_utc())}}},
         )
     snap.pop("_id", None)
+    # Don't echo the image back
+    snap.pop("image_base64", None)
     return snap
 
 
@@ -573,3 +583,117 @@ async def save_evaluation(attempt_id: str, payload: dict, _admin=Depends(require
         "created_at": iso(now_utc()),
     })
     return await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
+
+
+
+# ---------- Admin: Attempts + Recordings + Sharing ----------
+@router.get("/admin/attempts")
+async def admin_list_attempts(
+    _admin=Depends(require_admin),
+    exam_id: Optional[str] = None,
+    student_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 200,
+):
+    """List attempts (newest first) for the admin Results & Recording page."""
+    flt = {}
+    if exam_id:
+        flt["exam_id"] = exam_id
+    if student_id:
+        flt["student_id"] = student_id
+    if status:
+        flt["status"] = status
+    rows = await db.attempts.find(
+        flt,
+        {"_id": 0, "id": 1, "exam_id": 1, "exam_name": 1, "student_id": 1, "student_name": 1,
+         "status": 1, "score": 1, "max_score": 1, "submitted_at": 1, "started_at": 1,
+         "tab_switches": 1, "allowed_tab_switches": 1, "has_pending_review": 1, "violations": 1,
+         "submit_reason": 1},
+    ).sort([("submitted_at", -1), ("started_at", -1)]).limit(limit).to_list(limit)
+    for r in rows:
+        r["violations_count"] = len(r.pop("violations", []) or [])
+    return rows
+
+
+@router.get("/admin/attempts/{attempt_id}")
+async def admin_get_attempt(attempt_id: str, _admin=Depends(require_admin)):
+    """Full attempt detail (admin) — same as student's GET /result/{id} but without auth restriction."""
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    if a.get("status") == "submitted":
+        siblings = await db.attempts.find(
+            {"exam_id": a["exam_id"], "status": "submitted"},
+            {"_id": 0, "student_id": 1, "score": 1, "student_name": 1},
+        ).sort("score", -1).to_list(5000)
+        a["rank"] = next((i + 1 for i, s in enumerate(siblings) if s["student_id"] == a["student_id"]), None)
+        a["total_participants"] = len(siblings)
+        a["leaderboard"] = siblings[:10]
+        attempted = a.get("correct", 0) + a.get("wrong", 0)
+        a["accuracy"] = round((a.get("correct", 0) / attempted) * 100, 2) if attempted else 0
+    snap_count = await db.proctor_snapshots.count_documents({"attempt_id": attempt_id})
+    a["snapshots_count"] = snap_count
+    return a
+
+
+@router.get("/admin/attempts/{attempt_id}/snapshots")
+async def admin_attempt_snapshots(attempt_id: str, _admin=Depends(require_admin)):
+    """All proctoring snapshots for an attempt — includes base64 image bytes."""
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0, "id": 1})
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    snaps = await db.proctor_snapshots.find(
+        {"attempt_id": attempt_id}, {"_id": 0},
+    ).sort("at", 1).to_list(5000)
+    return snaps
+
+
+@router.post("/admin/attempts/{attempt_id}/share")
+async def admin_share_attempt(attempt_id: str, payload: dict = None, _admin=Depends(require_admin)):
+    """Log a share event and return shareable links + pre-built parent message.
+
+    Payload (optional): {channel: 'whatsapp'|'email'|'sms'|'copy', recipient: '<phone or email>'}
+    """
+    payload = payload or {}
+    channel = (payload.get("channel") or "copy").lower()
+    recipient = payload.get("recipient") or ""
+
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    if a.get("status") != "submitted":
+        raise HTTPException(status_code=400, detail="Attempt not yet submitted")
+
+    settings = await db.institute_settings.find_one({"id": "default"}, {"_id": 0}) or {}
+    inst_name = settings.get("name") or "Gyansai Maths IIT Center"
+
+    public_path = f"/r/{attempt_id}"
+    cert_path = f"/api/public/certificate/{attempt_id}"
+
+    msg = (
+        f"Hello! Here is the result of {a.get('student_name')} for "
+        f"\"{a.get('exam_name')}\" at {inst_name}:\n"
+        f"Score: {a.get('score')} / {a.get('max_score')}\n"
+        f"View full result: {{base}}{public_path}\n"
+        f"Certificate: {{base}}{cert_path}"
+    )
+
+    share = {
+        "id": new_id(),
+        "attempt_id": attempt_id,
+        "channel": channel,
+        "recipient": recipient,
+        "shared_at": iso(now_utc()),
+        "public_path": public_path,
+        "certificate_path": cert_path,
+        "message_template": msg,
+    }
+    await db.share_events.insert_one(share)
+    await db.activities.insert_one({
+        "id": new_id(),
+        "type": "result_shared",
+        "text": f"Result of '{a.get('student_name')}' shared via {channel}{f' to {recipient}' if recipient else ''}",
+        "created_at": iso(now_utc()),
+    })
+    share.pop("_id", None)
+    return share

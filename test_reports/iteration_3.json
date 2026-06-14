@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 3 backend verification — snapshot persistence + admin attempts/recording/sharing endpoints. All 12 new tests PASS. Full regression: 37/38 pass; the single failure is the pre-existing TestOCR::test_ocr_extracts_questions due to a transient Cloudflare 502 from the LLM gateway (flaky, unrelated to Iteration 3 changes).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/questions/ocr", "issue": "Flaky: returned 502 (Cloudflare Bad Gateway) during regression run. Likely transient LLM upstream issue, not introduced in Iteration 3."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_behaviors": [
+    "POST /api/exams/snapshot — image_base64 IS persisted in proctor_snapshots; response strips image_base64 field.",
+    "Snapshot size cap — 250 KB input is truncated to exactly 200 000 chars; size_bytes reflects truncated length.",
+    "Data URL prefix 'data:image/jpeg;base64,' is stripped before storage; stored value matches raw base64.",
+    "GET /api/exams/admin/attempts — admin-only, returns attempts with violations_count (raw violations array removed), supports exam_id/student_id/status filters, sorted newest-first.",
+    "Student token on /admin/attempts -> 403.",
+    "GET /api/exams/admin/attempts/{id} — returns attempt with snapshots_count; for submitted attempts also includes rank, total_participants, leaderboard (top 10), accuracy. 404 for unknown id.",
+    "GET /api/exams/admin/attempts/{id}/snapshots — returns snapshots sorted ascending by 'at', each includes image_base64.",
+    "POST /api/exams/admin/attempts/{id}/share — in_progress attempt -> 400 'Attempt not yet submitted'; student -> 403; submitted attempt returns share doc with id, channel, recipient, public_path='/r/{id}', certificate_path='/api/public/certificate/{id}', and message_template containing '{base}' plus both paths. share_events collection receives the doc (verified indirectly by 200 response and id presence)."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_exams.py admin_share_attempt: `payload: dict = None` is non-idiomatic for FastAPI body — works because FastAPI parses an empty body to {} via the `payload or {}` guard, but explicit Pydantic model (ShareIn) would give validation, OpenAPI docs and type safety.",
+    "routes_exams.py store_snapshot truncates oversized base64 by slicing, which can corrupt the JPEG (invalid bytes at tail). Acceptable for proctoring artifacts but worth a comment or refuse-with-413 alternative.",
+    "admin_list_attempts uses .limit(limit).to_list(limit) but mutates each row to add violations_count — fine; consider Mongo $size aggregation to avoid pulling the full violations array if it ever grows large."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "97% (37/38; OCR flaky 502 only)", "frontend": "skipped"},
+  "test_credentials": "admin@gyansai.com/admin123 and demo/demo123 (TEST_ users created on the fly).",
+  "seed_data_creation": "Per-test TEST_snap_* student is created + assigned to the seeded JEE Main exam, attempt started, snapshots pushed, then submitted in the share test. Student is deleted on teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Iteration 3 endpoints are green. The new tests live in /app/backend/tests/backend_test.py classes: TestSnapshotPersistence, TestAdminAttemptsEndpoints, TestAdminShareEndpoint, sharing the module-scoped `submitted_attempt_setup` fixture. If TestOCR keeps flaking, consider marking it @pytest.mark.flaky or skipping when 5xx from LLM gateway."
+}

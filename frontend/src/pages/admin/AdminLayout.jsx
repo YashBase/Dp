@@ -4,7 +4,7 @@ import { logout, getUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Users, FileQuestion, GraduationCap,
-  BookOpen, ListChecks, Settings, LogOut, Calculator, ClipboardCheck
+  BookOpen, ListChecks, Settings, LogOut, Calculator, ClipboardCheck, FileBarChart
 } from "lucide-react";
 
 const NAV = [
@@ -12,6 +12,7 @@ const NAV = [
   { to: "/admin/students", label: "Students", Icon: Users, id: "nav-students" },
   { to: "/admin/questions", label: "Question Bank", Icon: FileQuestion, id: "nav-questions" },
   { to: "/admin/exams", label: "Exams", Icon: GraduationCap, id: "nav-exams" },
+  { to: "/admin/results", label: "Results & Recording", Icon: FileBarChart, id: "nav-results" },
   { to: "/admin/evaluation", label: "Evaluation", Icon: ClipboardCheck, id: "nav-evaluation" },
   { to: "/admin/courses", label: "Courses", Icon: BookOpen, id: "nav-courses" },
   { to: "/admin/test-series", label: "Test Series", Icon: ListChecks, id: "nav-test-series" },

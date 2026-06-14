@@ -635,5 +635,235 @@ class TestManualEvaluation:
         assert s["aid"] not in ids
 
 
+# ---------- Snapshot Persistence + Admin Attempts/Sharing (Iteration 3) ----------
+import random as _rand
+
+
+def _make_small_jpeg_b64(noise: bool = False) -> str:
+    """Tiny valid JPEG, base64-encoded (no data URL prefix)."""
+    img = Image.new("RGB", (60, 40), (120, 180, 60))
+    if noise:
+        d = ImageDraw.Draw(img)
+        for _ in range(40):
+            x, y = _rand.randint(0, 59), _rand.randint(0, 39)
+            d.point((x, y), fill=(_rand.randint(0, 255), _rand.randint(0, 255), _rand.randint(0, 255)))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=70)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+@pytest.fixture(scope="module")
+def submitted_attempt_setup(admin_headers):
+    """Create a fresh student, attempt the JEE exam, push a snapshot before submit, then submit.
+    Returns dict with attempt_id, exam_id, student_id, student_headers."""
+    # find seeded JEE exam (or any published with question_ids)
+    rexams = requests.get(f"{API}/exams", headers=admin_headers)
+    exams = rexams.json()
+    target = next((e for e in exams if e.get("question_ids") and e.get("is_published")), None)
+    if not target:
+        # fallback: pick first with question_ids and publish it
+        target = next((e for e in exams if e.get("question_ids")), None)
+        assert target, "No exam with questions seeded"
+        requests.put(f"{API}/exams/{target['id']}", headers=admin_headers, json={**{k: v for k, v in target.items() if k in [
+            "name", "description", "type", "duration_minutes", "start_at", "end_at", "passing_marks",
+            "instructions", "randomize", "negative_marking", "question_ids", "allowed_tab_switches",
+            "enable_webcam", "price"
+        ]}, "is_published": True})
+    eid = target["id"]
+
+    uname = f"TEST_snap_{int(time.time())}_{_rand.randint(100, 999)}"
+    pw = "pass1234"
+    rs = requests.post(f"{API}/admin/students", headers=admin_headers,
+                       json={"name": "TEST Snap", "username": uname, "password": pw})
+    assert rs.status_code == 200, rs.text
+    sid = rs.json()["id"]
+    requests.post(f"{API}/admin/students/{sid}/assign", headers=admin_headers, json={"exam_ids": [eid]})
+    rl = requests.post(f"{API}/auth/student/login", json={"username": uname, "password": pw})
+    stoken = rl.json()["token"]
+    sh = {"Authorization": f"Bearer {stoken}"}
+
+    # start attempt
+    ra = requests.post(f"{API}/exams/start", headers=sh, json={"exam_id": eid})
+    assert ra.status_code == 200, ra.text
+    aid = ra.json()["id"]
+
+    yield {"attempt_id": aid, "exam_id": eid, "student_id": sid,
+           "student_headers": sh, "username": uname}
+
+    # cleanup
+    requests.delete(f"{API}/admin/students/{sid}", headers=admin_headers)
+
+
+class TestSnapshotPersistence:
+    """POST /api/exams/snapshot — image_base64 must persist in DB and not echo back."""
+
+    def test_snapshot_basic_persists_and_strips_image(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        b64 = _make_small_jpeg_b64(noise=True)
+        r = requests.post(f"{API}/exams/snapshot", headers=s["student_headers"],
+                          json={"attempt_id": s["attempt_id"], "image_base64": b64, "violation": None})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "image_base64" not in body, "image_base64 must be stripped from response"
+        assert body["attempt_id"] == s["attempt_id"]
+        assert body["size_bytes"] == len(b64)
+        snap_id = body["id"]
+        # Verify via admin snapshots endpoint that image_base64 was actually stored
+        rs = requests.get(f"{API}/exams/admin/attempts/{s['attempt_id']}/snapshots", headers=admin_headers)
+        assert rs.status_code == 200, rs.text
+        snaps = rs.json()
+        stored = next((x for x in snaps if x["id"] == snap_id), None)
+        assert stored is not None, "Snapshot not persisted"
+        assert stored.get("image_base64") == b64, "stored image_base64 differs from input"
+
+    def test_snapshot_oversized_truncated_to_200KB(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        oversized = "A" * 250_000  # ~250 KB string (not real image but server caps blindly)
+        r = requests.post(f"{API}/exams/snapshot", headers=s["student_headers"],
+                          json={"attempt_id": s["attempt_id"], "image_base64": oversized})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["size_bytes"] == 200_000, f"expected 200000, got {body['size_bytes']}"
+        snap_id = body["id"]
+        rs = requests.get(f"{API}/exams/admin/attempts/{s['attempt_id']}/snapshots", headers=admin_headers)
+        assert rs.status_code == 200
+        stored = next(x for x in rs.json() if x["id"] == snap_id)
+        assert len(stored["image_base64"]) == 200_000
+
+    def test_snapshot_data_url_prefix_stripped(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        raw = _make_small_jpeg_b64(noise=True)
+        dataurl = f"data:image/jpeg;base64,{raw}"
+        r = requests.post(f"{API}/exams/snapshot", headers=s["student_headers"],
+                          json={"attempt_id": s["attempt_id"], "image_base64": dataurl, "violation": "tab_switch"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        snap_id = body["id"]
+        assert body["size_bytes"] == len(raw), "prefix should be stripped before size measurement"
+        rs = requests.get(f"{API}/exams/admin/attempts/{s['attempt_id']}/snapshots", headers=admin_headers)
+        stored = next(x for x in rs.json() if x["id"] == snap_id)
+        assert stored["image_base64"] == raw, "data URL prefix not stripped"
+        assert not stored["image_base64"].startswith("data:"), "prefix still present"
+
+
+class TestAdminAttemptsEndpoints:
+    """GET /api/exams/admin/attempts (list, detail, snapshots) — Iteration 3."""
+
+    def test_admin_attempts_list_sorted_with_violations_count(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        r = requests.get(f"{API}/exams/admin/attempts", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        rows = r.json()
+        assert isinstance(rows, list)
+        assert any(x["id"] == s["attempt_id"] for x in rows), "attempt not in list"
+        row = next(x for x in rows if x["id"] == s["attempt_id"])
+        assert "violations_count" in row
+        assert isinstance(row["violations_count"], int)
+        assert "violations" not in row, "raw violations array should be stripped"
+
+    def test_admin_attempts_list_filters(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        # filter by exam_id
+        r = requests.get(f"{API}/exams/admin/attempts", headers=admin_headers,
+                         params={"exam_id": s["exam_id"]})
+        assert r.status_code == 200
+        for x in r.json():
+            assert x["exam_id"] == s["exam_id"]
+        # filter by student_id
+        r2 = requests.get(f"{API}/exams/admin/attempts", headers=admin_headers,
+                          params={"student_id": s["student_id"]})
+        assert r2.status_code == 200
+        for x in r2.json():
+            assert x["student_id"] == s["student_id"]
+        # filter by status=in_progress
+        r3 = requests.get(f"{API}/exams/admin/attempts", headers=admin_headers,
+                         params={"status": "in_progress", "student_id": s["student_id"]})
+        assert r3.status_code == 200
+        for x in r3.json():
+            assert x["status"] == "in_progress"
+
+    def test_admin_attempts_list_forbidden_for_student(self, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        r = requests.get(f"{API}/exams/admin/attempts", headers=s["student_headers"])
+        assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
+
+    def test_admin_attempt_detail_in_progress(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        r = requests.get(f"{API}/exams/admin/attempts/{s['attempt_id']}", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["id"] == s["attempt_id"]
+        assert "snapshots_count" in body
+        assert body["snapshots_count"] >= 1  # we pushed snapshots above
+        # in_progress -> no rank/leaderboard
+        assert body["status"] == "in_progress"
+
+    def test_admin_attempt_snapshots_ordered_ascending(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        r = requests.get(f"{API}/exams/admin/attempts/{s['attempt_id']}/snapshots", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        snaps = r.json()
+        assert len(snaps) >= 1
+        ats = [x["at"] for x in snaps]
+        assert ats == sorted(ats), "snapshots not sorted ascending by 'at'"
+        for sn in snaps:
+            assert "image_base64" in sn
+
+    def test_admin_attempt_detail_404_for_missing(self, admin_headers):
+        r = requests.get(f"{API}/exams/admin/attempts/does-not-exist", headers=admin_headers)
+        assert r.status_code == 404
+
+
+class TestAdminShareEndpoint:
+    """POST /api/exams/admin/attempts/{id}/share — Iteration 3."""
+
+    def test_share_not_submitted_returns_400(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        r = requests.post(f"{API}/exams/admin/attempts/{s['attempt_id']}/share",
+                          headers=admin_headers,
+                          json={"channel": "whatsapp", "recipient": "+919876543210"})
+        assert r.status_code == 400, r.text
+        assert "not yet submitted" in (r.json().get("detail") or "").lower()
+
+    def test_share_non_admin_403(self, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        r = requests.post(f"{API}/exams/admin/attempts/{s['attempt_id']}/share",
+                          headers=s["student_headers"],
+                          json={"channel": "whatsapp"})
+        assert r.status_code == 403, r.text
+
+    def test_share_after_submit_returns_links_and_template(self, admin_headers, submitted_attempt_setup):
+        s = submitted_attempt_setup
+        # submit the attempt first
+        rsub = requests.post(f"{API}/exams/submit", headers=s["student_headers"],
+                             json={"attempt_id": s["attempt_id"]})
+        assert rsub.status_code == 200, rsub.text
+
+        # detail now includes rank/leaderboard/accuracy/snapshots_count
+        rd = requests.get(f"{API}/exams/admin/attempts/{s['attempt_id']}", headers=admin_headers)
+        assert rd.status_code == 200
+        det = rd.json()
+        assert det["status"] == "submitted"
+        for k in ["rank", "total_participants", "leaderboard", "accuracy", "snapshots_count"]:
+            assert k in det, f"missing {k} in admin attempt detail"
+        assert det["snapshots_count"] >= 2  # we pushed multiple snapshots
+
+        # share
+        r = requests.post(f"{API}/exams/admin/attempts/{s['attempt_id']}/share",
+                          headers=admin_headers,
+                          json={"channel": "whatsapp", "recipient": "+919876543210"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["channel"] == "whatsapp"
+        assert body["recipient"] == "+919876543210"
+        assert body["attempt_id"] == s["attempt_id"]
+        assert body["public_path"] == f"/r/{s['attempt_id']}"
+        assert body["certificate_path"] == f"/api/public/certificate/{s['attempt_id']}"
+        assert "{base}" in body["message_template"]
+        assert body["public_path"] in body["message_template"]
+        assert body["certificate_path"] in body["message_template"]
+        assert "id" in body and isinstance(body["id"], str)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
