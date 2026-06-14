@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 4 — verified parent-accessible recording + result endpoints and Login.jsx empty-defaults change. 7 new backend pytest cases ALL PASS. Frontend Login behaves per spec (default tab=student, both forms empty on mount, Sign In disabled until both fields filled, old credential hints removed, new helper text present). Admin (admin@gyansai.com/admin123) and student (demo/demo123) logins still succeed. /r/c18eb0a0-... renders Identity Verified card with parent-baseline-photo populated, Proctoring Recording carousel with parent-snapshot-current + Prev/Next + 3 thumbnails, Subject-wise Performance, and Integrity Report with tab_switches counter and violations timeline (baseline, tab switch).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/r/:attemptId parent page", "issues": ["Thumbnail buttons do not expose individual data-testid (e.g. snapshot-thumb-{i}) — only the active <img> has parent-snapshot-current. Suggest adding data-testid to each thumbnail for deterministic Playwright targeting.", "Sub-section headings (Subject-wise, Integrity Report) use CSS text-transform:uppercase which is fine visually but slightly hurts automated text matching; not a defect."]}
+    ]
+  },
+  "verified_behaviors": [
+    "GET /api/public/recording/{id} (no auth) returns {attempt_id, student_name, exam_name, snapshots[]}. Snapshots include id, at, image_base64 (non-empty) and are sorted ascending by 'at'.",
+    "GET /api/public/recording/{id} -> 404 'Recording not available' for unknown id.",
+    "GET /api/public/recording/{id} -> 404 'Recording not available' for in_progress (unsubmitted) attempt (verified with freshly started attempt).",
+    "GET /api/public/result/{id} now includes violations[]={type,at} and snapshots_count number; still hides per_question/answers.",
+    "Legacy GET /api/exams/public/result/{id} returns 200 with backward-compatible payload.",
+    "Legacy GET /api/exams/public/recording/{id} returns 200 with snapshots[] including image_base64.",
+    "Login.jsx — initial adminForm and studentForm states are empty strings; both Sign In buttons carry disabled attr until both fields populated.",
+    "Login.jsx — body text contains 'Forgot your password? Contact your institute.' and 'Admin access only. Contact your system administrator if locked out.' Old 'Default: admin@gyansai.com / admin123' and 'Demo: demo / demo123' hints are completely removed.",
+    "Admin login with admin@gyansai.com/admin123 navigates to /admin. Student login with demo/demo123 navigates to /app.",
+    "/r/c18eb0a0-8164-4e01-8a3b-fe977ee35df5 renders all required elements (Identity Verified card with baseline image, snapshot carousel, Prev/Next, thumbnail strip, Subject-wise Performance, Integrity Report with violations timeline)."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid to each carousel thumbnail (e.g. snapshot-thumb-0, snapshot-thumb-1, ...) in PublicResult.jsx for better test selectors."
+  ],
+  "critical_code_review_comments": [
+    "routes_public.public_recording_full / public_result_full are sync-looking helpers reused by both /api/public/* and legacy /api/exams/public/* routes — good DRY; consider exposing them as plain module-level functions only (not router methods) to avoid duplicate OpenAPI docs entries.",
+    "public_result_full builds 'violations' by iterating attempt['violations'] and projecting only {type, at}. If a violation document lacks 'type' or 'at', None values may surface. Consider filtering None entries or defaulting to 'unknown' to keep the parent UI tidy.",
+    "Login.jsx disabled-state check uses `!form.username || !form.password` — fine, but whitespace-only inputs ('   ') would currently enable Sign In. Trim values before checking or use `.trim().length>0` to harden."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (7/7 new iter-4 tests)", "frontend": "100% (login default-empty + admin login + student login + parent /r/ page)"},
+  "test_credentials": "admin@gyansai.com/admin123 and demo/demo123 (per /app/memory/test_credentials.md)",
+  "seed_data_creation": "Used pre-existing attempt c18eb0a0-8164-4e01-8a3b-fe977ee35df5. For 404-on-in-progress test, created an ephemeral TEST_inprog_* student and started+abandoned an attempt; student is deleted in teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 4 fully green. New backend pytest classes live in /app/backend/tests/backend_test.py: TestParentPublicRecording, TestParentPublicResult, TestLegacyPublicEndpoints. They reference PARENT_ATTEMPT_ID = c18eb0a0-8164-4e01-8a3b-fe977ee35df5 which is a permanent submitted attempt with 3 snapshots (baseline + tab_switch + extra). If that attempt is ever removed from the seed/DB, those tests will need a fresh fixture-created submitted attempt with snapshots."
+}

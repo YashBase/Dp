@@ -33,6 +33,64 @@ async def public_test_series():
     return await db.test_series.find({"is_published": True}, {"_id": 0}).limit(12).to_list(12)
 
 
+# ---------- Parent-accessible result + recording ----------
+async def public_result_full(attempt_id: str):
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
+    if not a or a.get("status") != "submitted":
+        raise HTTPException(status_code=404, detail="Result not available")
+    safe = {
+        "id": a["id"],
+        "exam_name": a["exam_name"],
+        "student_name": a["student_name"],
+        "score": a.get("score"),
+        "max_score": a.get("max_score"),
+        "correct": a.get("correct"),
+        "wrong": a.get("wrong"),
+        "skipped": a.get("skipped"),
+        "subject_stats": a.get("subject_stats"),
+        "submitted_at": a.get("submitted_at"),
+        "violations_count": len(a.get("violations") or []),
+        "tab_switches": a.get("tab_switches", 0),
+        "violations": [{"type": v.get("type"), "at": v.get("at")} for v in (a.get("violations") or [])],
+        "snapshots_count": await db.proctor_snapshots.count_documents({"attempt_id": attempt_id}),
+    }
+    siblings = await db.attempts.count_documents(
+        {"exam_id": a["exam_id"], "status": "submitted", "score": {"$gt": a.get("score") or 0}}
+    )
+    safe["rank"] = siblings + 1
+    safe["total_participants"] = await db.attempts.count_documents({"exam_id": a["exam_id"], "status": "submitted"})
+    return safe
+
+
+async def public_recording_full(attempt_id: str):
+    a = await db.attempts.find_one(
+        {"id": attempt_id}, {"_id": 0, "id": 1, "status": 1, "student_name": 1, "exam_name": 1},
+    )
+    if not a or a.get("status") != "submitted":
+        raise HTTPException(status_code=404, detail="Recording not available")
+    snaps = await db.proctor_snapshots.find(
+        {"attempt_id": attempt_id}, {"_id": 0},
+    ).sort("at", 1).to_list(5000)
+    return {
+        "attempt_id": attempt_id,
+        "student_name": a.get("student_name"),
+        "exam_name": a.get("exam_name"),
+        "snapshots": snaps,
+    }
+
+
+@router.get("/result/{attempt_id}")
+async def public_result(attempt_id: str):
+    """Parent-friendly result page (no auth). Includes integrity summary, no answer key."""
+    return await public_result_full(attempt_id)
+
+
+@router.get("/recording/{attempt_id}")
+async def public_recording(attempt_id: str):
+    """Parent-friendly proctoring recording (no auth) — snapshots with images."""
+    return await public_recording_full(attempt_id)
+
+
 @router.get("/certificate/{attempt_id}")
 async def certificate_pdf(attempt_id: str):
     a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})

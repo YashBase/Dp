@@ -865,5 +865,113 @@ class TestAdminShareEndpoint:
         assert "id" in body and isinstance(body["id"], str)
 
 
+# ---------- Parent-Accessible Recording + Result (Iteration 4) ----------
+# Uses pre-existing submitted attempt with snapshots: c18eb0a0-8164-4e01-8a3b-fe977ee35df5
+PARENT_ATTEMPT_ID = "c18eb0a0-8164-4e01-8a3b-fe977ee35df5"
+
+
+class TestParentPublicRecording:
+    """/api/public/recording/{id} — no auth, returns snapshot images for submitted attempts."""
+
+    def test_recording_submitted_returns_snapshots_with_images_sorted(self):
+        r = requests.get(f"{API}/public/recording/{PARENT_ATTEMPT_ID}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        for k in ["attempt_id", "student_name", "exam_name", "snapshots"]:
+            assert k in body, f"missing {k}"
+        assert body["attempt_id"] == PARENT_ATTEMPT_ID
+        assert isinstance(body["snapshots"], list)
+        assert len(body["snapshots"]) >= 1, "expected at least 1 snapshot"
+        # Each snapshot has image_base64
+        for sn in body["snapshots"]:
+            assert "id" in sn and "at" in sn
+            assert "image_base64" in sn and isinstance(sn["image_base64"], str) and len(sn["image_base64"]) > 0
+        # Sorted ascending by 'at'
+        ats = [sn["at"] for sn in body["snapshots"]]
+        assert ats == sorted(ats), "snapshots not sorted ascending by 'at'"
+
+    def test_recording_unknown_id_404(self):
+        r = requests.get(f"{API}/public/recording/does-not-exist-xyz-iter4")
+        assert r.status_code == 404
+        assert "Recording not available" in (r.json().get("detail") or "")
+
+    def test_recording_in_progress_attempt_404(self, admin_headers, submitted_attempt_setup):
+        """submitted_attempt_setup yields an in_progress attempt (submit happens later in another class).
+        We can only safely call this before the share-test class submits it. Order matters by file layout:
+        TestSnapshotPersistence and TestAdminAttemptsEndpoints don't submit; TestAdminShareEndpoint does.
+        Since this test runs after that class (pytest collects by file order), use a NEW in_progress attempt."""
+        # create a fresh in_progress attempt to avoid dependency on collection order
+        rexams = requests.get(f"{API}/exams", headers=admin_headers)
+        target = next((e for e in rexams.json() if e.get("question_ids") and e.get("is_published")), None)
+        assert target, "no published exam with questions"
+        uname = f"TEST_inprog_{int(time.time())}_{_rand.randint(100, 999)}"
+        rs = requests.post(f"{API}/admin/students", headers=admin_headers,
+                           json={"name": "TEST InProg", "username": uname, "password": "pass1234"})
+        sid = rs.json()["id"]
+        try:
+            requests.post(f"{API}/admin/students/{sid}/assign", headers=admin_headers,
+                          json={"exam_ids": [target["id"]]})
+            rl = requests.post(f"{API}/auth/student/login",
+                               json={"username": uname, "password": "pass1234"})
+            sh = {"Authorization": f"Bearer {rl.json()['token']}"}
+            ra = requests.post(f"{API}/exams/start", headers=sh, json={"exam_id": target["id"]})
+            assert ra.status_code == 200
+            aid = ra.json()["id"]
+            r = requests.get(f"{API}/public/recording/{aid}")
+            assert r.status_code == 404, r.text
+            assert "Recording not available" in (r.json().get("detail") or "")
+        finally:
+            requests.delete(f"{API}/admin/students/{sid}", headers=admin_headers)
+
+
+class TestParentPublicResult:
+    """/api/public/result/{id} — now also includes violations[] and snapshots_count."""
+
+    def test_result_includes_violations_and_snapshots_count(self):
+        r = requests.get(f"{API}/public/result/{PARENT_ATTEMPT_ID}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        # core fields
+        for k in ["id", "exam_name", "student_name", "score", "max_score",
+                  "violations", "violations_count", "snapshots_count", "tab_switches"]:
+            assert k in body, f"missing {k}"
+        # violations is a list of {type, at}
+        assert isinstance(body["violations"], list)
+        if body["violations"]:
+            v = body["violations"][0]
+            assert "type" in v and "at" in v
+            # No sensitive payload fields beyond type/at
+            assert set(v.keys()) == {"type", "at"}
+        assert isinstance(body["snapshots_count"], int)
+        assert body["snapshots_count"] >= 1
+        # must NOT leak answers
+        assert "per_question" not in body
+        assert "answers" not in body
+
+    def test_result_unknown_id_404(self):
+        r = requests.get(f"{API}/public/result/does-not-exist-xyz-iter4")
+        assert r.status_code == 404
+
+
+class TestLegacyPublicEndpoints:
+    """Backward compatibility: legacy /api/exams/public/* paths must still respond 200."""
+
+    def test_legacy_public_result_200(self):
+        r = requests.get(f"{API}/exams/public/result/{PARENT_ATTEMPT_ID}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["id"] == PARENT_ATTEMPT_ID
+        assert "score" in body
+
+    def test_legacy_public_recording_200(self):
+        r = requests.get(f"{API}/exams/public/recording/{PARENT_ATTEMPT_ID}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["attempt_id"] == PARENT_ATTEMPT_ID
+        assert isinstance(body["snapshots"], list)
+        assert len(body["snapshots"]) >= 1
+        assert "image_base64" in body["snapshots"][0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

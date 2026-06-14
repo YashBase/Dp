@@ -14,8 +14,8 @@ export default function Login() {
   const [sp] = useSearchParams();
   const [tab, setTab] = useState(sp.get("role") === "admin" ? "admin" : "student");
   const [loading, setLoading] = useState(false);
-  const [adminForm, setAdminForm] = useState({ email: "admin@gyansai.com", password: "admin123" });
-  const [studentForm, setStudentForm] = useState({ username: "demo", password: "demo123" });
+  const [adminForm, setAdminForm] = useState({ email: "", password: "" });
+  const [studentForm, setStudentForm] = useState({ username: "", password: "" });
 
   const submit = async (kind) => {
     setLoading(true);
@@ -87,42 +87,50 @@ export default function Login() {
                 <Label htmlFor="su">Username</Label>
                 <Input id="su" data-testid="student-username-input" value={studentForm.username}
                        onChange={(e) => setStudentForm({ ...studentForm, username: e.target.value })}
-                       placeholder="your username" className="mt-1 rounded-sm" />
+                       placeholder="Enter your username"
+                       autoComplete="username"
+                       className="mt-1 rounded-sm" />
               </div>
               <div>
                 <Label htmlFor="sp">Password</Label>
                 <Input id="sp" type="password" data-testid="student-password-input" value={studentForm.password}
                        onChange={(e) => setStudentForm({ ...studentForm, password: e.target.value })}
-                       placeholder="••••••••" className="mt-1 rounded-sm" />
+                       placeholder="Enter your password"
+                       autoComplete="current-password"
+                       className="mt-1 rounded-sm" />
               </div>
-              <Button onClick={() => submit("student")} disabled={loading}
+              <Button onClick={() => submit("student")} disabled={loading || !studentForm.username || !studentForm.password}
                       data-testid="student-login-submit" className="w-full rounded-sm h-11">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign In"}
               </Button>
-              <p className="text-xs text-muted-foreground text-center mt-2 mono">
-                Demo: <span className="font-bold">demo / demo123</span>
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Forgot your password? Contact your institute.
               </p>
             </TabsContent>
 
             <TabsContent value="admin" className="mt-6 space-y-4">
               <div>
                 <Label htmlFor="ae">Email</Label>
-                <Input id="ae" data-testid="admin-email-input" value={adminForm.email}
+                <Input id="ae" type="email" data-testid="admin-email-input" value={adminForm.email}
                        onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
-                       placeholder="admin@gyansai.com" className="mt-1 rounded-sm" />
+                       placeholder="Enter admin email"
+                       autoComplete="email"
+                       className="mt-1 rounded-sm" />
               </div>
               <div>
                 <Label htmlFor="ap">Password</Label>
                 <Input id="ap" type="password" data-testid="admin-password-input" value={adminForm.password}
                        onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
-                       placeholder="••••••••" className="mt-1 rounded-sm" />
+                       placeholder="Enter admin password"
+                       autoComplete="current-password"
+                       className="mt-1 rounded-sm" />
               </div>
-              <Button onClick={() => submit("admin")} disabled={loading}
+              <Button onClick={() => submit("admin")} disabled={loading || !adminForm.email || !adminForm.password}
                       data-testid="admin-login-submit" className="w-full rounded-sm h-11">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign In as Admin"}
               </Button>
-              <p className="text-xs text-muted-foreground text-center mt-2 mono">
-                Default: <span className="font-bold">admin@gyansai.com / admin123</span>
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Admin access only. Contact your system administrator if locked out.
               </p>
             </TabsContent>
           </Tabs>

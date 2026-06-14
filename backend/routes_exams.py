@@ -394,30 +394,16 @@ async def get_result(attempt_id: str, user=Depends(get_current_user)):
 
 
 @router.get("/public/result/{attempt_id}")
-async def public_result(attempt_id: str):
-    """Parent-friendly link — no auth, but no answer key shown."""
-    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
-    if not a or a.get("status") != "submitted":
-        raise HTTPException(status_code=404, detail="Result not available")
-    safe = {
-        "id": a["id"],
-        "exam_name": a["exam_name"],
-        "student_name": a["student_name"],
-        "score": a.get("score"),
-        "max_score": a.get("max_score"),
-        "correct": a.get("correct"),
-        "wrong": a.get("wrong"),
-        "skipped": a.get("skipped"),
-        "subject_stats": a.get("subject_stats"),
-        "submitted_at": a.get("submitted_at"),
-        "violations_count": len(a.get("violations") or []),
-        "tab_switches": a.get("tab_switches", 0),
-    }
-    # Rank
-    siblings = await db.attempts.count_documents({"exam_id": a["exam_id"], "status": "submitted", "score": {"$gt": a.get("score") or 0}})
-    safe["rank"] = siblings + 1
-    safe["total_participants"] = await db.attempts.count_documents({"exam_id": a["exam_id"], "status": "submitted"})
-    return safe
+async def _legacy_public_result(attempt_id: str):
+    """Kept for backward compatibility — see /api/public/result/{id} in routes_public."""
+    from routes_public import public_result_full
+    return await public_result_full(attempt_id)
+
+
+@router.get("/public/recording/{attempt_id}")
+async def _legacy_public_recording(attempt_id: str):
+    from routes_public import public_recording_full
+    return await public_recording_full(attempt_id)
 
 
 @router.get("/{exam_id}/leaderboard")
