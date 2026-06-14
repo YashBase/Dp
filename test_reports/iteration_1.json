@@ -1,0 +1,39 @@
+{
+  "summary": "Backend-only test run for Gyansai Maths IIT Center. 16/16 pytest cases passed end-to-end covering auth, dashboard, settings, students CRUD, questions CRUD + meta + bulk-save, exam CRUD + clone + publish, full attempt flow (start → save → violation → submit → result → public result → certificate PDF), mock checkout granting exam access, and OCR via Emergent LLM key.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/settings", "issue": "Currently gated by no auth at all (returns settings to anyone). Routes_admin defines this without require_admin while every other admin route requires admin. Acceptable for branding but worth noting since bank fields are NOT excluded here (only on /api/public/institute). bank_account/bank_ifsc would leak via /api/admin/settings to any caller."},
+      {"endpoint": "GET /api/exams/result/{attempt_id}", "issue": "Admin role can fetch any student's result. Intended but worth confirming with product."},
+      {"endpoint": "POST /api/exams/start", "issue": "One-shot per student — if a student already submitted, returns 400. Tests handled by using fresh student. No reset endpoint exists, which may be needed for retakes."},
+      {"endpoint": "POST /api/exams/snapshot", "issue": "MOCKED (documented) — image bytes discarded; only size stored. As designed."},
+      {"endpoint": "POST /api/student/checkout", "issue": "MOCKED Razorpay — always succeeds. As designed."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Consider gating GET /api/admin/settings behind require_admin (or excluding bank_* fields) to prevent leakage of bank details to unauthenticated clients."
+  ],
+  "critical_code_review_comments": [
+    "GET /api/admin/settings has no auth dependency and returns full document including bank_account/bank_ifsc — public/institute correctly redacts these but the admin path doesn't (anyone can hit /api/admin/settings).",
+    "routes_admin.update_course / update_test_series do full replacement via PUT; partial updates not supported. Acceptable but documented.",
+    "routes_exams._do_submit re-fetches questions list with no projection to derive correct_answer; relies on question still existing. If admin deletes a question after attempt start, score for that qid silently becomes skipped/wrong with empty correct_answer. Consider snapshotting correct_answer at attempt start.",
+    "routes_questions bulk-save does not validate per-item with Pydantic — raw dicts inserted with minimal defaults; could store malformed questions.",
+    "Exam attempt is one-shot per student/exam (no retry). No admin endpoint to reset attempts."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/__init__.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "admin@gyansai.com / admin123 ; demo / demo123 ; coupon GYAN10",
+  "seed_data_creation": "Pytest creates TEST_-prefixed students/questions during runs and deletes them; checkout test creates fresh student and cleans up. Some test-created data (bulk-saved questions, TEST exam clones) may persist if a test errors mid-flight, but no leakage observed in this run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is fully green at iteration 1. Re-run `python -m pytest /app/backend/tests/backend_test.py -v` for regression. OCR test depends on Emergent LLM key + network to OpenAI; expect ~5–8s latency. The seeded exam is auto-republished by fixture if toggled. Use a fresh student for each new attempt flow (one-shot enforced).",
+  "rca of the issue": "N/A — no failing test in this iteration."
+}

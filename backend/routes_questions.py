@@ -1,0 +1,195 @@
+"""Question bank routes — CRUD, filters, OCR upload via OpenAI Vision."""
+import base64
+import json
+import re
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from core import db, require_admin, new_id, now_utc, iso, EMERGENT_LLM_KEY
+from models import QuestionIn, OcrRequest
+
+router = APIRouter(prefix="/questions", tags=["questions"])
+
+
+@router.get("")
+async def list_questions(
+    _admin=Depends(require_admin),
+    subject: Optional[str] = None,
+    chapter: Optional[str] = None,
+    topic: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 200,
+):
+    flt = {}
+    if subject:
+        flt["subject"] = subject
+    if chapter:
+        flt["chapter"] = chapter
+    if topic:
+        flt["topic"] = topic
+    if difficulty:
+        flt["difficulty"] = difficulty
+    if q:
+        flt["$or"] = [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"description": {"$regex": q, "$options": "i"}},
+            {"tags": {"$regex": q, "$options": "i"}},
+        ]
+    return await db.questions.find(flt, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+
+
+@router.get("/meta")
+async def question_meta(_admin=Depends(require_admin)):
+    """Distinct subjects/chapters/topics for filters."""
+    subjects = await db.questions.distinct("subject")
+    chapters = await db.questions.distinct("chapter")
+    topics = await db.questions.distinct("topic")
+    total = await db.questions.count_documents({})
+    return {"subjects": subjects, "chapters": chapters, "topics": topics, "total": total}
+
+
+@router.post("")
+async def create_question(data: QuestionIn, _admin=Depends(require_admin)):
+    doc = data.model_dump()
+    doc["options"] = [o for o in doc.get("options") or []]
+    doc["id"] = new_id()
+    doc["created_at"] = iso(now_utc())
+    await db.questions.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/{qid}")
+async def update_question(qid: str, data: QuestionIn, _admin=Depends(require_admin)):
+    update = data.model_dump()
+    res = await db.questions.update_one({"id": qid}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return await db.questions.find_one({"id": qid}, {"_id": 0})
+
+
+@router.delete("/{qid}")
+async def delete_question(qid: str, _admin=Depends(require_admin)):
+    res = await db.questions.delete_one({"id": qid})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return {"ok": True}
+
+
+@router.post("/bulk-save")
+async def bulk_save_questions(payload: dict, _admin=Depends(require_admin)):
+    items = payload.get("questions") or []
+    saved = 0
+    for q in items:
+        q["id"] = new_id()
+        q["created_at"] = iso(now_utc())
+        q.setdefault("subject", "General")
+        q.setdefault("difficulty", "medium")
+        q.setdefault("type", "mcq_single")
+        q.setdefault("marks", 4.0)
+        q.setdefault("negative_marks", 1.0)
+        await db.questions.insert_one(q)
+        saved += 1
+    return {"saved": saved}
+
+
+# ---------- OCR via OpenAI Vision (Emergent LLM Key) ----------
+OCR_SYSTEM = (
+    "You are an expert OCR system specialized in extracting math, physics, chemistry and biology "
+    "exam questions from photos and PDFs of JEE / NEET / MHT-CET papers. "
+    "Extract structured questions only. If multiple questions are present, return all of them. "
+    "Detect mathematical equations and render them in LaTeX inside $...$ delimiters when possible. "
+    "Respond with STRICT JSON only — no markdown, no commentary."
+)
+
+OCR_USER_PROMPT = (
+    "Extract every question you can see in this image. "
+    "For each question return JSON with this exact schema:\n"
+    "{\n"
+    '  "questions": [\n'
+    "    {\n"
+    '      "title": "<question text>",\n'
+    '      "description": "<additional context if any>",\n'
+    '      "type": "mcq_single" | "mcq_multi" | "numerical" | "true_false" | "short",\n'
+    '      "subject": "Mathematics" | "Physics" | "Chemistry" | "Biology" | "General",\n'
+    '      "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}],\n'
+    '      "correct_answer": "A" | ["A","C"] | "<numeric>" | "<text>",\n'
+    '      "explanation": "<solution / reasoning if visible, else empty>",\n'
+    '      "difficulty": "easy" | "medium" | "hard",\n'
+    '      "marks": 4,\n'
+    '      "negative_marks": 1\n'
+    "    }\n"
+    "  ]\n"
+    "}\n"
+    "Return ONLY valid JSON. If no question is visible, return {\"questions\": []}."
+)
+
+
+def _parse_ocr_json(text: str) -> dict:
+    text = text.strip()
+    # Strip code fences if any
+    text = re.sub(r"^```(?:json)?", "", text).strip()
+    text = re.sub(r"```$", "", text).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        # Try to extract first JSON object
+        m = re.search(r"\{[\s\S]*\}", text)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except Exception:
+                pass
+    return {"questions": []}
+
+
+@router.post("/ocr")
+async def ocr_extract(payload: OcrRequest, _admin=Depends(require_admin)):
+    """Extract questions from a base64-encoded image using OpenAI Vision."""
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OCR module not available: {e}")
+
+    # Strip potential data URL prefix
+    b64 = payload.image_base64
+    if "," in b64 and b64.lstrip().lower().startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"ocr-{new_id()}",
+        system_message=OCR_SYSTEM,
+    ).with_model("openai", "gpt-4o")
+
+    image = ImageContent(image_base64=b64)
+    try:
+        reply = await chat.send_message(UserMessage(text=OCR_USER_PROMPT, file_contents=[image]))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"OCR failed: {e}")
+
+    parsed = _parse_ocr_json(reply or "")
+    qs = parsed.get("questions") or []
+    # Normalize
+    for q in qs:
+        q.setdefault("type", "mcq_single")
+        q.setdefault("subject", "General")
+        q.setdefault("difficulty", "medium")
+        q.setdefault("marks", 4.0)
+        q.setdefault("negative_marks", 1.0)
+        q.setdefault("options", [])
+        q.setdefault("explanation", "")
+    return {"questions": qs}
+
+
+@router.post("/ocr/upload")
+async def ocr_upload(file: UploadFile = File(...), _admin=Depends(require_admin)):
+    """Multipart helper: accept image upload and run OCR."""
+    content = await file.read()
+    if len(content) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 8MB)")
+    b64 = base64.b64encode(content).decode("utf-8")
+    return await ocr_extract(OcrRequest(image_base64=b64, mime_type=file.content_type or "image/jpeg"))

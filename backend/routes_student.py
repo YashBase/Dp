@@ -1,0 +1,139 @@
+"""Student-facing routes: dashboard, my results, courses, test series storefront."""
+from fastapi import APIRouter, Depends, HTTPException
+from core import db, require_student, get_current_user, new_id, now_utc, iso
+from models import CheckoutIn
+
+router = APIRouter(prefix="/student", tags=["student"])
+
+
+@router.get("/dashboard")
+async def student_dashboard(student=Depends(require_student)):
+    sid = student["id"]
+    student_doc = await db.students.find_one({"id": sid}, {"_id": 0, "password_hash": 0})
+
+    attempts = await db.attempts.find({"student_id": sid}, {"_id": 0}).sort("started_at", -1).to_list(200)
+    submitted = [a for a in attempts if a.get("status") == "submitted"]
+    avg_score = round(sum(a.get("score", 0) for a in submitted) / max(len(submitted), 1), 2) if submitted else 0
+    total_correct = sum(a.get("correct", 0) for a in submitted)
+    total_wrong = sum(a.get("wrong", 0) for a in submitted)
+    total_attempted = total_correct + total_wrong
+    accuracy = round((total_correct / total_attempted) * 100, 2) if total_attempted else 0
+
+    # Available exams
+    avail = await db.exams.find(
+        {"$or": [
+            {"is_published": True, "price": 0},
+            {"id": {"$in": student_doc.get("exam_ids") or []}},
+        ]}, {"_id": 0, "question_ids": 0}
+    ).sort("created_at", -1).limit(10).to_list(10)
+
+    # Courses
+    courses = await db.courses.find(
+        {"$or": [
+            {"is_published": True, "price": 0},
+            {"id": {"$in": student_doc.get("course_ids") or []}},
+        ]}, {"_id": 0}
+    ).limit(8).to_list(8)
+
+    return {
+        "student": student_doc,
+        "kpis": {
+            "exams_taken": len(submitted),
+            "avg_score": avg_score,
+            "accuracy": accuracy,
+            "total_correct": total_correct,
+        },
+        "recent_attempts": submitted[:5],
+        "available_exams": avail,
+        "courses": courses,
+    }
+
+
+@router.get("/my-attempts")
+async def my_attempts(student=Depends(require_student)):
+    return await db.attempts.find({"student_id": student["id"]}, {"_id": 0}).sort("started_at", -1).to_list(500)
+
+
+@router.get("/courses")
+async def my_courses(student=Depends(require_student)):
+    student_doc = await db.students.find_one({"id": student["id"]}, {"_id": 0})
+    courses = await db.courses.find(
+        {"$or": [
+            {"is_published": True, "price": 0},
+            {"id": {"$in": student_doc.get("course_ids") or []}},
+        ]}, {"_id": 0}
+    ).to_list(1000)
+    return courses
+
+
+@router.get("/courses/{course_id}")
+async def get_course(course_id: str, student=Depends(require_student)):
+    c = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return c
+
+
+@router.get("/test-series")
+async def list_test_series_public(_=Depends(get_current_user)):
+    return await db.test_series.find({"is_published": True}, {"_id": 0}).to_list(1000)
+
+
+@router.post("/checkout")
+async def checkout(data: CheckoutIn, user=Depends(get_current_user)):
+    """MOCKED payment: instantly grants access. In production, integrate Razorpay."""
+    # Fetch item
+    coll_map = {"course": "courses", "test_series": "test_series", "exam": "exams"}
+    coll = coll_map.get(data.item_type)
+    if not coll:
+        raise HTTPException(status_code=400, detail="Invalid item_type")
+    item = await db[coll].find_one({"id": data.item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    amount = item.get("price", 0)
+    if data.coupon and data.coupon.upper() == "GYAN10":
+        amount = round(amount * 0.9, 2)
+
+    payment = {
+        "id": new_id(),
+        "user_id": user["id"],
+        "user_name": user.get("name"),
+        "item_type": data.item_type,
+        "item_id": data.item_id,
+        "item_name": item.get("name"),
+        "amount": amount,
+        "status": "success",  # MOCKED — always succeeds
+        "mock": True,
+        "created_at": iso(now_utc()),
+    }
+    await db.payments.insert_one(payment)
+
+    # Grant access
+    update = {}
+    if user["role"] == "student":
+        if data.item_type == "course":
+            update["$addToSet"] = {"course_ids": data.item_id}
+        elif data.item_type == "exam":
+            update["$addToSet"] = {"exam_ids": data.item_id}
+        elif data.item_type == "test_series":
+            exam_ids = item.get("exam_ids") or []
+            update["$addToSet"] = {"exam_ids": {"$each": exam_ids}}
+        if update:
+            await db.students.update_one({"id": user["id"]}, update)
+
+    payment.pop("_id", None)
+    return {"payment": payment, "mocked": True}
+
+
+@router.get("/profile")
+async def get_profile(student=Depends(require_student)):
+    return await db.students.find_one({"id": student["id"]}, {"_id": 0, "password_hash": 0})
+
+
+@router.put("/profile")
+async def update_profile(payload: dict, student=Depends(require_student)):
+    allowed = {"name", "email", "mobile", "photo_url"}
+    upd = {k: v for k, v in payload.items() if k in allowed}
+    if upd:
+        await db.students.update_one({"id": student["id"]}, {"$set": upd})
+    return await db.students.find_one({"id": student["id"]}, {"_id": 0, "password_hash": 0})
