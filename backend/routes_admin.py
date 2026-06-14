@@ -13,7 +13,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 # ---------- Institute Settings ----------
 @router.get("/settings")
-async def get_settings():
+async def get_settings(_admin=Depends(require_admin)):
     s = await db.institute_settings.find_one({"id": "default"}, {"_id": 0})
     return s or {}
 
