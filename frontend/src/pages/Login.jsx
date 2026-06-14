@@ -99,7 +99,7 @@ export default function Login() {
                        autoComplete="current-password"
                        className="mt-1 rounded-sm" />
               </div>
-              <Button onClick={() => submit("student")} disabled={loading || !studentForm.username || !studentForm.password}
+              <Button onClick={() => submit("student")} disabled={loading || !studentForm.username.trim() || !studentForm.password.trim()}
                       data-testid="student-login-submit" className="w-full rounded-sm h-11">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign In"}
               </Button>
@@ -125,7 +125,7 @@ export default function Login() {
                        autoComplete="current-password"
                        className="mt-1 rounded-sm" />
               </div>
-              <Button onClick={() => submit("admin")} disabled={loading || !adminForm.email || !adminForm.password}
+              <Button onClick={() => submit("admin")} disabled={loading || !adminForm.email.trim() || !adminForm.password.trim()}
                       data-testid="admin-login-submit" className="w-full rounded-sm h-11">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign In as Admin"}
               </Button>
