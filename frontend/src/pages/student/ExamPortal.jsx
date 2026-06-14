@@ -60,6 +60,8 @@ export default function ExamPortal() {
   const logViolation = useCallback(async (type) => {
     try {
       const { data } = await api.post("/exams/violation", { attempt_id: attemptId, violation_type: type });
+      // Always capture a face snapshot when a violation occurs
+      captureSnapshot(type);
       if (type === "tab_switch") {
         const remaining = data.allowed - data.tab_switches;
         setWarnText(`Tab switch detected! ${data.tab_switches}/${data.allowed} used. ${remaining > 0 ? `${remaining} warning(s) left before auto-submit.` : "Exam will be auto-submitted."}`);
@@ -67,6 +69,7 @@ export default function ExamPortal() {
         if (data.auto_submit) setTimeout(() => nav(`/app/result/${attemptId}`, { replace: true }), 1500);
       }
     } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attemptId, nav]);
 
   useEffect(() => {
@@ -94,10 +97,28 @@ export default function ExamPortal() {
     if (!attempt) return;
     (async () => {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false });
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 480 }, height: { ideal: 360 }, facingMode: "user" },
+          audio: false,
+        });
         streamRef.current = s;
-        if (videoRef.current) { videoRef.current.srcObject = s; await videoRef.current.play().catch(() => {}); }
-        snapTimerRef.current = setInterval(captureSnapshot, 60000);
+        if (videoRef.current) {
+          videoRef.current.srcObject = s;
+          await videoRef.current.play().catch(() => {});
+          // Identity baseline: wait until video has real dimensions then capture
+          const tryBaseline = (attempts = 0) => {
+            const v = videoRef.current;
+            if (!v) return;
+            if (v.videoWidth > 0 && v.videoHeight > 0) {
+              captureSnapshot("baseline");
+            } else if (attempts < 10) {
+              setTimeout(() => tryBaseline(attempts + 1), 500);
+            }
+          };
+          setTimeout(() => tryBaseline(0), 800);
+        }
+        // Regular snapshots every 30 seconds
+        snapTimerRef.current = setInterval(() => captureSnapshot(), 30000);
       } catch (e) {
         toast.warning("Webcam not available — proctoring will be limited.");
       }
@@ -109,16 +130,17 @@ export default function ExamPortal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
 
-  const captureSnapshot = async () => {
+  const captureSnapshot = async (violation = null) => {
     if (!videoRef.current || !streamRef.current) return;
     const v = videoRef.current;
+    if (!v.videoWidth || !v.videoHeight) return;
     const c = document.createElement("canvas");
-    c.width = v.videoWidth || 320; c.height = v.videoHeight || 240;
+    c.width = v.videoWidth; c.height = v.videoHeight;
     const ctx = c.getContext("2d");
     ctx.drawImage(v, 0, 0, c.width, c.height);
-    const b64 = c.toDataURL("image/jpeg", 0.5).split(",")[1];
+    const b64 = c.toDataURL("image/jpeg", 0.6).split(",")[1];
     try {
-      await api.post("/exams/snapshot", { attempt_id: attemptId, image_base64: b64 });
+      await api.post("/exams/snapshot", { attempt_id: attemptId, image_base64: b64, violation });
     } catch (_) {}
   };
 

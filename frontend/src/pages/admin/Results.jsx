@@ -208,12 +208,37 @@ function Detail({ attemptId, onBack }) {
           )}
         </div>
 
-        <div className="grid-card p-6">
-          <div className="overline mb-3">Share with parents</div>
-          <p className="text-xs text-muted-foreground mb-3">Send a no-login parent link with score, rank & certificate.</p>
+        <div className="grid-card p-4 flex gap-3">
+          {(() => {
+            const baseline = (snaps || []).find((s) => s.violation === "baseline") || snaps[0];
+            return (
+              <div className="w-32 aspect-[4/3] bg-foreground rounded-sm overflow-hidden shrink-0">
+                {baseline?.image_base64 ? (
+                  <img src={`data:image/jpeg;base64,${baseline.image_base64}`} alt="identity" className="w-full h-full object-cover" data-testid="baseline-photo" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-background text-[10px] mono p-2 text-center">No webcam photo</div>
+                )}
+              </div>
+            );
+          })()}
+          <div className="flex-1 min-w-0">
+            <div className="overline">Identity baseline</div>
+            <div className="text-sm font-medium mt-1 truncate">{a.student_name}</div>
+            <div className="text-xs text-muted-foreground mono mt-1">First webcam capture at start of exam.</div>
+            <div className="text-[10px] text-muted-foreground mt-2">If this face does not match the enrolled student, mark the attempt for review.</div>
+          </div>
+        </div>
+      </header>
+
+      <div className="grid-card p-4">
+        <div className="flex flex-wrap gap-3 items-center justify-between">
+          <div className="overline">Share with parents</div>
+          <p className="text-xs text-muted-foreground hidden sm:block">Send a no-login parent link with score, rank & certificate.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3">
           <Dialog open={shareOpen} onOpenChange={setShareOpen}>
             <DialogTrigger asChild>
-              <Button className="w-full rounded-sm" disabled={!isSubmitted} data-testid="open-share-dialog">
+              <Button className="rounded-sm" disabled={!isSubmitted} data-testid="open-share-dialog">
                 <LinkIcon className="w-4 h-4 mr-1" /> Share parent link
               </Button>
             </DialogTrigger>
@@ -251,13 +276,13 @@ function Detail({ attemptId, onBack }) {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <a href={`${API}/public/certificate/${attemptId}`} target="_blank" rel="noreferrer" className="block mt-2">
-            <Button variant="outline" className="w-full rounded-sm" disabled={!isSubmitted} data-testid="admin-download-cert">
+          <a href={`${API}/public/certificate/${attemptId}`} target="_blank" rel="noreferrer">
+            <Button variant="outline" className="rounded-sm" disabled={!isSubmitted} data-testid="admin-download-cert">
               <Download className="w-4 h-4 mr-1" /> Download certificate
             </Button>
           </a>
         </div>
-      </header>
+      </div>
 
       {/* Recording */}
       <div className="grid lg:grid-cols-3 gap-4">
