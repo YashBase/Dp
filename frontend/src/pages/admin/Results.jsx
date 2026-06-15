@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { toast } from "sonner";
 import {
   ArrowLeft, Camera, ShieldAlert, Trophy, Target, ChevronLeft, ChevronRight,
-  Link as LinkIcon, MessageCircle, Mail, Download, Loader2, AlertTriangle, Search
+  Link as LinkIcon, MessageCircle, Mail, Download, Loader2, AlertTriangle, Search, Trash2
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell } from "recharts";
 
@@ -32,6 +32,15 @@ function List({ onOpen }) {
       const q = filter.q.trim().toLowerCase();
       setRows(q ? data.filter((r) => (r.student_name || "").toLowerCase().includes(q) || (r.exam_name || "").toLowerCase().includes(q)) : data);
     } finally { setLoading(false); }
+  };
+
+  const del = async (id, name) => {
+    if (!window.confirm(`Delete attempt "${name}" and ALL its proctoring data (snapshots, video clips, share events)?\n\nThis cannot be undone.`)) return;
+    try {
+      const { data } = await api.delete(`/exams/admin/attempts/${id}`);
+      toast.success(`Deleted — ${data.snapshots_deleted} snapshots + ${data.recordings_deleted} clips removed.`);
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Delete failed"); }
   };
 
   useEffect(() => { api.get("/exams").then((r) => setExams(r.data)); load(); /* eslint-disable-next-line */ }, []);
@@ -106,9 +115,14 @@ function List({ onOpen }) {
                   <Badge variant={r.status === "submitted" ? "default" : "secondary"} className="rounded-sm">{r.status === "submitted" ? (r.submit_reason && r.submit_reason !== "manual" ? r.submit_reason.replace(/_/g, " ").toUpperCase() : "SUBMITTED") : "IN PROGRESS"}</Badge>
                 </td>
                 <td className="px-4 py-2.5">
-                  <Button size="sm" variant="outline" onClick={() => onOpen(r.id)} data-testid={`results-open-${r.id}`}>
-                    Open <ChevronRight className="w-3 h-3 ml-1" />
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" onClick={() => onOpen(r.id)} data-testid={`results-open-${r.id}`}>
+                      Open <ChevronRight className="w-3 h-3 ml-1" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => del(r.id, `${r.student_name} — ${r.exam_name}`)} data-testid={`results-delete-${r.id}`} title="Delete attempt + recording">
+                      <Trash2 className="w-3 h-3 text-destructive" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -201,6 +215,25 @@ function Detail({ attemptId, onBack }) {
       <button onClick={onBack} className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-1" data-testid="back-to-results">
         <ArrowLeft className="w-3 h-3" /> Back to results
       </button>
+
+      <div className="flex justify-end -mt-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="rounded-sm text-destructive border-destructive/30 hover:bg-destructive/10"
+          data-testid="delete-attempt-btn"
+          onClick={async () => {
+            if (!window.confirm(`Permanently delete this attempt and ALL its proctoring data (snapshots + ${chunks.length} video clips + share events)?\n\nThis cannot be undone.`)) return;
+            try {
+              const { data } = await api.delete(`/exams/admin/attempts/${attemptId}`);
+              toast.success(`Deleted — ${data.snapshots_deleted} snapshots + ${data.recordings_deleted} clips removed.`);
+              onBack();
+            } catch (e) { toast.error(e?.response?.data?.detail || "Delete failed"); }
+          }}
+        >
+          <Trash2 className="w-3 h-3 mr-1" /> Delete attempt + recording
+        </Button>
+      </div>
 
       <header className="grid lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 grid-card p-6">

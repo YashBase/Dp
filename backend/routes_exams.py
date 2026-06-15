@@ -710,6 +710,26 @@ async def admin_attempt_snapshots(attempt_id: str, _admin=Depends(require_admin)
     return snaps
 
 
+@router.delete("/admin/attempts/{attempt_id}")
+async def admin_delete_attempt(attempt_id: str, _admin=Depends(require_admin)):
+    """Cascade-delete an attempt and ALL associated proctoring data (snapshots, recording chunks, share events)."""
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0, "id": 1, "exam_name": 1, "student_name": 1})
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    snap_n = (await db.proctor_snapshots.delete_many({"attempt_id": attempt_id})).deleted_count
+    rec_n = (await db.proctor_recordings.delete_many({"attempt_id": attempt_id})).deleted_count
+    shr_n = (await db.share_events.delete_many({"attempt_id": attempt_id})).deleted_count
+    await db.attempts.delete_one({"id": attempt_id})
+    await db.activities.insert_one({
+        "id": new_id(),
+        "type": "attempt_deleted",
+        "text": f"Deleted attempt '{a.get('exam_name')}' by {a.get('student_name')} (snapshots={snap_n}, clips={rec_n})",
+        "created_at": iso(now_utc()),
+    })
+    return {"ok": True, "snapshots_deleted": snap_n, "recordings_deleted": rec_n, "shares_deleted": shr_n}
+
+
+
 @router.post("/admin/attempts/{attempt_id}/share")
 async def admin_share_attempt(attempt_id: str, payload: dict = None, _admin=Depends(require_admin)):
     """Log a share event and return shareable links + pre-built parent message.
