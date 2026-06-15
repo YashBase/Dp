@@ -67,8 +67,14 @@ Build a complete production-ready SaaS Online Examination & LMS for an Indian II
 - **Class / Section** on students & exams: 11th and 12th Standard. Admin Students dialog has class dropdown; table shows Class column. Admin Exams dialog has Class select; student-side exam cards display class badge.
 - **Tag presets** on Exam dialog: quick-pick chips for JEE Mains, JEE Advanced, MHT-CET, NEET (plus free-text custom tag).
 - **Assigned Students picker** on Exam dialog (new "Students" tab) — admin can target specific students; backend syncs `student.exam_ids` on save/update. Visibility logic: if `assigned_student_ids` is set, only those students see the exam in their portal (even if published).
-- **Student Courses catalog fix** — `/api/student/courses` now returns ALL published courses (free + paid) with a `purchased` flag, instead of hiding paid ones. Paid unowned courses return locked preview (chapters stripped). Course detail page shows "Unlock for ₹X" CTA → PaymentDialog → UTR submission → Admin approval → unlocked content + appears in My Purchases.
+- **Student Courses catalog fix** — `/api/student/courses` now returns ALL published courses (free + paid) with a `purchased` flag. Paid unowned courses return locked preview (chapters stripped). Course detail page shows "Unlock for ₹X" CTA → PaymentDialog → UTR submission → Admin approval → unlocked content + appears in My Purchases.
 - Tested via `/app/test_reports/iteration_8.json` — 6/6 backend pytest + full E2E course purchase flow verified.
+
+## Recent Changes (2026-06-15, evening) — Question-Bank Folders + Quick Assign Wizard
+- **Test Folder on questions** — new `test_folder` field on every question. UI in Add Question → Metadata tab (`q-test-folder` with datalist), question rows show 📁 badge, toolbar has Test Folder filter (`filter-folder`).
+- **Folder bulk-tag on OCR** — when saving OCR-extracted questions, admin can assign all of them to a Test Folder in one click (`ocr-folder-input`).
+- **Quick-Assign Exam Wizard** — new button (`quick-assign-btn`) in Question Bank header opens "Folder → Class → Exam" dialog. Picks a folder + class (11th/12th) + tag (JEE Mains/Adv/MHT-CET/NEET) + exam name → backend `POST /api/questions/quick-assign-exam` creates an exam with ALL questions in that folder and auto-assigns it to every active student of that class. Returns `{exam, questions_count, assigned_count}`.
+- Tested via `/app/test_reports/iteration_9.json` — 8/8 backend pytest + all UI selectors verified, including class-filter exclusion (11th student doesn't see a 12th-only auto-exam).
 
 ## Next Action Items
 1. Notifications system (Resend email + Twilio SMS) — P1
