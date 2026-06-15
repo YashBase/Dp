@@ -126,6 +126,7 @@ async def create_student(data: StudentIn, _admin=Depends(require_admin)):
         "mobile": data.mobile or "",
         "enrollment_no": data.enrollment_no or "",
         "photo_url": data.photo_url or "",
+        "class_level": data.class_level or "",
         "status": "active",
         "course_ids": [],
         "exam_ids": [],

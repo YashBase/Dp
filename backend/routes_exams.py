@@ -59,13 +59,32 @@ async def list_exams(user=Depends(get_current_user)):
     if user["role"] == "admin":
         exams = await db.exams.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     else:
-        # Student sees only published / assigned exams
+        # Student sees: assigned (via student.exam_ids) OR published-free.
+        # Published-free exams are filtered further:
+        #   • if exam has assigned_student_ids set, only those students see it
+        #   • if exam has class_level set, only matching students see it (student's class_level must match)
         student = await db.students.find_one({"id": user["id"]}, {"_id": 0})
         assigned_ids = (student or {}).get("exam_ids") or []
-        exams = await db.exams.find({"$or": [
+        student_class = (student or {}).get("class_level") or ""
+        candidates = await db.exams.find({"$or": [
             {"is_published": True, "price": 0},
             {"id": {"$in": assigned_ids}},
         ]}, {"_id": 0, "question_ids": 0}).sort("created_at", -1).to_list(1000)
+        exams = []
+        for e in candidates:
+            in_assigned_purchase = e["id"] in assigned_ids
+            target_students = e.get("assigned_student_ids") or []
+            target_class = (e.get("class_level") or "").strip()
+            # Purchased / explicitly assigned always visible
+            if in_assigned_purchase:
+                exams.append(e)
+                continue
+            # Published-free path — apply class & assigned filters
+            if target_students and user["id"] not in target_students:
+                continue
+            if target_class and student_class and target_class != student_class:
+                continue
+            exams.append(e)
         # Mark which exams the student already attempted/submitted
         for e in exams:
             attempt = await db.attempts.find_one(
@@ -91,6 +110,13 @@ async def create_exam(data: ExamIn, _admin=Depends(require_admin)):
     doc["created_at"] = iso(now_utc())
     await db.exams.insert_one(doc)
     doc.pop("_id", None)
+    # Push exam id into each assigned student's exam_ids so it appears for them
+    target_students = doc.get("assigned_student_ids") or []
+    if target_students:
+        await db.students.update_many(
+            {"id": {"$in": target_students}},
+            {"$addToSet": {"exam_ids": doc["id"]}},
+        )
     await db.activities.insert_one({
         "id": new_id(),
         "type": "exam_created",
@@ -102,9 +128,22 @@ async def create_exam(data: ExamIn, _admin=Depends(require_admin)):
 
 @router.put("/{exam_id}")
 async def update_exam(exam_id: str, data: ExamIn, _admin=Depends(require_admin)):
-    res = await db.exams.update_one({"id": exam_id}, {"$set": data.model_dump()})
+    upd = data.model_dump()
+    res = await db.exams.update_one({"id": exam_id}, {"$set": upd})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Exam not found")
+    # Sync assigned_student_ids → students.exam_ids
+    target_students = upd.get("assigned_student_ids") or []
+    if target_students:
+        await db.students.update_many(
+            {"id": {"$in": target_students}},
+            {"$addToSet": {"exam_ids": exam_id}},
+        )
+    # Remove exam_id from students no longer in assignment list
+    await db.students.update_many(
+        {"exam_ids": exam_id, "id": {"$nin": target_students}},
+        {"$pull": {"exam_ids": exam_id}},
+    )
     return await db.exams.find_one({"id": exam_id}, {"_id": 0})
 
 

@@ -27,13 +27,16 @@ async def student_dashboard(student=Depends(require_student)):
         ]}, {"_id": 0, "question_ids": 0}
     ).sort("created_at", -1).limit(10).to_list(10)
 
-    # Courses
+    # Courses (catalog — all published, plus owned)
+    owned_course_ids = student_doc.get("course_ids") or []
     courses = await db.courses.find(
         {"$or": [
-            {"is_published": True, "price": 0},
-            {"id": {"$in": student_doc.get("course_ids") or []}},
+            {"is_published": True},
+            {"id": {"$in": owned_course_ids}},
         ]}, {"_id": 0}
     ).limit(8).to_list(8)
+    for c in courses:
+        c["purchased"] = c["id"] in owned_course_ids
 
     return {
         "student": student_doc,
@@ -56,13 +59,18 @@ async def my_attempts(student=Depends(require_student)):
 
 @router.get("/courses")
 async def my_courses(student=Depends(require_student)):
+    """List ALL published courses (free + paid) for the catalog.
+    Each row carries `purchased=true` if the student already owns it."""
     student_doc = await db.students.find_one({"id": student["id"]}, {"_id": 0})
+    owned = set(student_doc.get("course_ids") or [])
     courses = await db.courses.find(
         {"$or": [
-            {"is_published": True, "price": 0},
-            {"id": {"$in": student_doc.get("course_ids") or []}},
+            {"is_published": True},
+            {"id": {"$in": list(owned)}},
         ]}, {"_id": 0}
     ).to_list(1000)
+    for c in courses:
+        c["purchased"] = c["id"] in owned
     return courses
 
 
@@ -71,6 +79,13 @@ async def get_course(course_id: str, student=Depends(require_student)):
     c = await db.courses.find_one({"id": course_id}, {"_id": 0})
     if not c:
         raise HTTPException(status_code=404, detail="Course not found")
+    student_doc = await db.students.find_one({"id": student["id"]}, {"_id": 0})
+    owned = course_id in (student_doc.get("course_ids") or [])
+    c["purchased"] = owned
+    if not owned and float(c.get("price") or 0) > 0:
+        # Paid course not yet owned → return preview only, strip chapter content
+        c["chapters"] = []
+        c["locked"] = True
     return c
 
 

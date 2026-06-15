@@ -16,11 +16,15 @@ import { Plus, Trash2, Pencil, Copy, ChartBar, Save } from "lucide-react";
 const blank = () => ({
   name: "", description: "", type: "mock", duration_minutes: 60,
   exam_tag: "",
+  class_level: "",
   start_at: "", end_at: "",
   passing_marks: 0, instructions: "Read each question carefully. Marks: +4 correct, -1 wrong (numerical: no negative).",
   randomize: false, negative_marking: true, question_ids: [],
+  assigned_student_ids: [],
   allowed_tab_switches: 3, enable_webcam: true, is_published: false, price: 0,
 });
+
+const TAG_PRESETS = ["JEE Mains", "JEE Advanced", "MHT-CET", "NEET"];
 
 // Convert ISO string ↔ datetime-local input value (no timezone offset)
 const isoToLocal = (s) => {
@@ -35,20 +39,24 @@ const localToIso = (v) => (v ? new Date(v).toISOString() : null);
 export default function Exams() {
   const [rows, setRows] = useState([]);
   const [questions, setQuestions] = useState([]);
+  const [students, setStudents] = useState([]);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(blank());
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analytics, setAnalytics] = useState(null);
   const [filterSubject, setFilterSubject] = useState("all");
+  const [studentSearch, setStudentSearch] = useState("");
 
   const load = async () => {
-    const [{ data: e }, { data: q }] = await Promise.all([
+    const [{ data: e }, { data: q }, { data: s }] = await Promise.all([
       api.get("/exams"),
       api.get("/questions"),
+      api.get("/admin/students"),
     ]);
     setRows(e);
     setQuestions(q);
+    setStudents(s);
   };
 
   useEffect(() => { load(); }, []);
@@ -103,6 +111,7 @@ export default function Exams() {
               <TabsList>
                 <TabsTrigger value="basics">Basics</TabsTrigger>
                 <TabsTrigger value="questions">Questions ({form.question_ids.length})</TabsTrigger>
+                <TabsTrigger value="students" data-testid="tab-students">Students ({form.assigned_student_ids.length})</TabsTrigger>
                 <TabsTrigger value="rules">Rules & Proctoring</TabsTrigger>
               </TabsList>
               <TabsContent value="basics" className="space-y-3">
@@ -120,17 +129,40 @@ export default function Exams() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div><Label>Class / Section</Label>
+                    <Select value={form.class_level || "any"} onValueChange={(v) => setForm({ ...form, class_level: v === "any" ? "" : v })}>
+                      <SelectTrigger className="rounded-sm" data-testid="exam-class"><SelectValue placeholder="Any" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any (Both 11th & 12th)</SelectItem>
+                        <SelectItem value="11th">11th Standard</SelectItem>
+                        <SelectItem value="12th">12th Standard</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div><Label>Duration (min)</Label><Input type="number" value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} data-testid="exam-duration" /></div>
-                  <div><Label>Pass marks</Label><Input type="number" value={form.passing_marks} onChange={(e) => setForm({ ...form, passing_marks: Number(e.target.value) })} /></div>
                   <div><Label>Price (₹)</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} /></div>
                 </div>
                 <div>
-                  <Label>Exam folder / tag <span className="text-xs text-muted-foreground">(e.g. JEE, MHT-CET, NEET)</span></Label>
-                  <Input value={form.exam_tag} onChange={(e) => setForm({ ...form, exam_tag: e.target.value })} placeholder="JEE" className="rounded-sm mt-1" data-testid="exam-tag" list="exam-tag-options" />
+                  <Label>Exam folder / tag</Label>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5 mb-2">
+                    {TAG_PRESETS.map((t) => (
+                      <button type="button" key={t}
+                        onClick={() => setForm({ ...form, exam_tag: t })}
+                        className={`px-2.5 py-1 text-xs rounded-sm border mono transition-colors ${form.exam_tag === t ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                        data-testid={`tag-preset-${t.replace(/\s+/g, "-")}`}>
+                        {t}
+                      </button>
+                    ))}
+                    {form.exam_tag && !TAG_PRESETS.includes(form.exam_tag) && (
+                      <span className="px-2.5 py-1 text-xs rounded-sm bg-primary text-primary-foreground mono">{form.exam_tag}</span>
+                    )}
+                  </div>
+                  <Input value={form.exam_tag} onChange={(e) => setForm({ ...form, exam_tag: e.target.value })} placeholder="Custom tag e.g. CBSE Practice" className="rounded-sm" data-testid="exam-tag" list="exam-tag-options" />
                   <datalist id="exam-tag-options">
-                    {Array.from(new Set(rows.map((r) => r.exam_tag).filter(Boolean))).map((t) => <option key={t} value={t} />)}
+                    {Array.from(new Set([...TAG_PRESETS, ...rows.map((r) => r.exam_tag).filter(Boolean)])).map((t) => <option key={t} value={t} />)}
                   </datalist>
                 </div>
+                <div><Label>Pass marks</Label><Input type="number" value={form.passing_marks} onChange={(e) => setForm({ ...form, passing_marks: Number(e.target.value) })} className="rounded-sm" /></div>
                 <div><Label>Instructions</Label><Textarea rows={4} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></div>
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
                   <div>
@@ -169,6 +201,54 @@ export default function Exams() {
                       </div>
                     </label>
                   ))}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="students" className="space-y-3">
+                <div className="grid-card p-3 bg-muted/30">
+                  <p className="text-xs text-muted-foreground">
+                    <strong>Assign specific students</strong> — only the selected students will see this exam in their portal.
+                    Leave empty + publish to make it visible to all students (optionally filtered by Class).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Input placeholder="Search name / username / enrollment…" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="rounded-sm flex-1 min-w-[200px]" data-testid="student-search" />
+                  <Button size="sm" variant="outline" type="button" onClick={() => {
+                    const visible = students.filter((s) => {
+                      const m = studentSearch.toLowerCase();
+                      const classMatch = !form.class_level || (s.class_level || "") === form.class_level;
+                      return classMatch && (!m || s.name?.toLowerCase().includes(m) || s.username?.toLowerCase().includes(m) || s.enrollment_no?.toLowerCase().includes(m));
+                    });
+                    setForm({ ...form, assigned_student_ids: visible.map((s) => s.id) });
+                  }} data-testid="student-select-all">Select all visible</Button>
+                  <Button size="sm" variant="ghost" type="button" onClick={() => setForm({ ...form, assigned_student_ids: [] })}>Clear</Button>
+                  <div className="text-xs text-muted-foreground mono ml-auto">Selected: {form.assigned_student_ids.length}</div>
+                </div>
+                <div className="max-h-[400px] overflow-y-auto border border-border rounded-sm">
+                  {students.length === 0 && <div className="p-6 text-center text-sm text-muted-foreground">No students yet. Add students from the Students page.</div>}
+                  {students
+                    .filter((s) => {
+                      const m = studentSearch.toLowerCase();
+                      const classMatch = !form.class_level || (s.class_level || "") === form.class_level;
+                      return classMatch && (!m || s.name?.toLowerCase().includes(m) || s.username?.toLowerCase().includes(m) || s.enrollment_no?.toLowerCase().includes(m));
+                    })
+                    .map((s) => (
+                      <label key={s.id} className="flex gap-3 items-center text-sm cursor-pointer hover:bg-muted/40 p-2.5 border-b border-border last:border-0">
+                        <Checkbox
+                          checked={form.assigned_student_ids.includes(s.id)}
+                          onCheckedChange={(c) => setForm({ ...form, assigned_student_ids: c ? [...form.assigned_student_ids, s.id] : form.assigned_student_ids.filter((i) => i !== s.id) })}
+                          data-testid={`spick-${s.id}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{s.name} <span className="text-xs text-muted-foreground mono">@{s.username}</span></div>
+                          <div className="text-xs text-muted-foreground mono">
+                            {s.class_level ? <Badge variant="outline" className="rounded-sm mr-1 text-[10px]">{s.class_level}</Badge> : null}
+                            {s.enrollment_no || "—"} · {s.email || "no email"}
+                          </div>
+                        </div>
+                        {s.status === "suspended" && <Badge variant="destructive" className="rounded-sm text-[10px]">SUSPENDED</Badge>}
+                      </label>
+                    ))}
                 </div>
               </TabsContent>
 
@@ -226,7 +306,11 @@ export default function Exams() {
                   <div key={e.id} className="grid-card p-5 brutalist-hover" data-testid={`exam-card-${e.id}`}>
                     <div className="flex justify-between items-start">
                       <div>
-                        <Badge variant={e.is_published ? "default" : "secondary"} className="rounded-sm">{e.is_published ? "LIVE" : "DRAFT"}</Badge>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge variant={e.is_published ? "default" : "secondary"} className="rounded-sm">{e.is_published ? "LIVE" : "DRAFT"}</Badge>
+                          {e.class_level && <Badge variant="outline" className="rounded-sm mono text-[10px]">{e.class_level}</Badge>}
+                          {(e.assigned_student_ids || []).length > 0 && <Badge variant="outline" className="rounded-sm mono text-[10px]">👥 {e.assigned_student_ids.length}</Badge>}
+                        </div>
                         <h3 className="heading text-lg font-semibold mt-2">{e.name}</h3>
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{e.description}</p>
                       </div>

@@ -51,6 +51,7 @@ class StudentIn(BaseModel):
     mobile: Optional[str] = ""
     enrollment_no: Optional[str] = ""
     photo_url: Optional[str] = ""
+    class_level: Optional[str] = ""  # "", "11th", "12th"
 
 
 class StudentUpdate(BaseModel):
@@ -61,6 +62,7 @@ class StudentUpdate(BaseModel):
     photo_url: Optional[str] = None
     status: Optional[str] = None  # active | suspended
     password: Optional[str] = None
+    class_level: Optional[str] = None
 
 
 # ---------- Questions ----------
@@ -91,7 +93,8 @@ class ExamIn(BaseModel):
     name: str
     description: Optional[str] = ""
     type: str = "mock"  # mock | full | chapter | weekly
-    exam_tag: Optional[str] = ""  # folder/category — e.g. JEE, MHT-CET, NEET
+    exam_tag: Optional[str] = ""  # folder/category — e.g. JEE Mains, JEE Advanced, MHT-CET, NEET
+    class_level: Optional[str] = ""  # "", "11th", "12th"
     duration_minutes: int = 60
     start_at: Optional[str] = None
     end_at: Optional[str] = None
@@ -100,6 +103,7 @@ class ExamIn(BaseModel):
     randomize: bool = False
     negative_marking: bool = True
     question_ids: List[str] = Field(default_factory=list)
+    assigned_student_ids: List[str] = Field(default_factory=list)
     allowed_tab_switches: int = 3
     enable_webcam: bool = True
     is_published: bool = False

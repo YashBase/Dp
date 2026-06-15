@@ -2,66 +2,100 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { ArrowLeft, PlayCircle } from "lucide-react";
+import { ArrowLeft, PlayCircle, Lock } from "lucide-react";
+import PaymentDialog from "@/components/PaymentDialog";
 
 export default function CourseDetail() {
   const { id } = useParams();
   const [c, setC] = useState(null);
   const [active, setActive] = useState(null);
+  const [buying, setBuying] = useState(false);
 
-  useEffect(() => {
-    api.get(`/student/courses/${id}`).then((r) => {
-      setC(r.data);
-      const firstVideo = r.data?.chapters?.find((ch) => ch.videos?.length)?.videos[0];
-      if (firstVideo) setActive(firstVideo);
-    });
-  }, [id]);
+  const reload = () => api.get(`/student/courses/${id}`).then((r) => {
+    setC(r.data);
+    const firstVideo = r.data?.chapters?.find((ch) => ch.videos?.length)?.videos[0];
+    if (firstVideo) setActive(firstVideo);
+  });
+
+  useEffect(() => { reload(); }, [id]);
 
   if (!c) return <div className="p-12 mono text-sm">Loading…</div>;
 
+  const locked = c.locked && !c.purchased;
+
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-8 space-y-6">
       <Link to="/app/courses" className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-1"><ArrowLeft className="w-3 h-3" /> Back to courses</Link>
-      <header>
-        <div className="overline">// {c.subject}</div>
-        <h1 className="heading text-3xl font-bold mt-1">{c.name}</h1>
-        <p className="text-sm text-muted-foreground mt-2 max-w-3xl">{c.description}</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="overline">// {c.subject}</div>
+          <h1 className="heading text-3xl font-bold mt-1">{c.name}</h1>
+          <p className="text-sm text-muted-foreground mt-2 max-w-3xl">{c.description}</p>
+          <div className="flex items-center gap-2 mt-3">
+            {c.purchased ? <Badge className="rounded-sm">PURCHASED</Badge> : <Badge variant="secondary" className="rounded-sm">PREVIEW</Badge>}
+            {c.price > 0 && <Badge variant="outline" className="rounded-sm mono">₹{c.price}</Badge>}
+          </div>
+        </div>
+        {locked && (
+          <Button onClick={() => setBuying(true)} data-testid="cd-buy-now" className="rounded-sm">
+            <Lock className="w-4 h-4 mr-1.5" /> Unlock for ₹{c.price}
+          </Button>
+        )}
       </header>
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 grid-card overflow-hidden">
-          <div className="aspect-video bg-muted">
-            {active?.url ? (
-              <iframe src={active.url} title={active.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="w-full h-full"></iframe>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground">Select a lecture to begin</div>
-            )}
+      {locked ? (
+        <div className="grid-card p-10 text-center">
+          <Lock className="w-12 h-12 mx-auto text-muted-foreground" />
+          <div className="heading text-xl font-bold mt-3">Course content is locked</div>
+          <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+            Purchase this course (₹{c.price}) to unlock all chapters & video lectures. Once your UTR is approved, it appears here & in My Purchases automatically.
+          </p>
+          <Button className="mt-5 rounded-sm" onClick={() => setBuying(true)} data-testid="cd-buy-now-2">Buy Now</Button>
+        </div>
+      ) : (
+        <div className="grid lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 grid-card overflow-hidden">
+            <div className="aspect-video bg-muted">
+              {active?.url ? (
+                <iframe src={active.url} title={active.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="w-full h-full"></iframe>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground">Select a lecture to begin</div>
+              )}
+            </div>
+            {active && <div className="p-4 border-t border-border"><h3 className="heading font-semibold">{active.title}</h3></div>}
           </div>
-          {active && <div className="p-4 border-t border-border"><h3 className="heading font-semibold">{active.title}</h3></div>}
-        </div>
 
-        <div className="grid-card p-2 max-h-[600px] overflow-y-auto">
-          <Accordion type="multiple" className="w-full">
-            {(c.chapters || []).map((ch, i) => (
-              <AccordionItem key={ch.id || i} value={`ch-${i}`}>
-                <AccordionTrigger className="px-3 text-sm font-medium">{ch.title}</AccordionTrigger>
-                <AccordionContent>
-                  <div className="space-y-1 pl-2 pr-2">
-                    {(ch.videos || []).map((v, j) => (
-                      <button key={j} onClick={() => setActive(v)}
-                              className={`w-full text-left flex items-center gap-2 p-2 rounded-sm text-sm hover:bg-muted/40 ${active?.url === v.url ? "bg-primary/10" : ""}`}>
-                        <PlayCircle className="w-3 h-3 text-primary" /> {v.title || `Lecture ${j + 1}`}
-                      </button>
-                    ))}
-                    {(ch.videos || []).length === 0 && <div className="text-xs text-muted-foreground px-2">No videos in this chapter yet.</div>}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
+          <div className="grid-card p-2 max-h-[600px] overflow-y-auto">
+            <Accordion type="multiple" className="w-full">
+              {(c.chapters || []).map((ch, i) => (
+                <AccordionItem key={ch.id || i} value={`ch-${i}`}>
+                  <AccordionTrigger className="px-3 text-sm font-medium">{ch.title}</AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-1 pl-2 pr-2">
+                      {(ch.videos || []).map((v, j) => (
+                        <button key={j} onClick={() => setActive(v)}
+                                className={`w-full text-left flex items-center gap-2 p-2 rounded-sm text-sm hover:bg-muted/40 ${active?.url === v.url ? "bg-primary/10" : ""}`}>
+                          <PlayCircle className="w-3 h-3 text-primary" /> {v.title || `Lecture ${j + 1}`}
+                        </button>
+                      ))}
+                      {(ch.videos || []).length === 0 && <div className="text-xs text-muted-foreground px-2">No videos in this chapter yet.</div>}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+              {(c.chapters || []).length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No chapters yet.</div>}
+            </Accordion>
+          </div>
         </div>
-      </div>
+      )}
+
+      <PaymentDialog
+        open={buying} onOpenChange={setBuying}
+        item={buying ? { ...c, type: "course" } : null}
+        onSuccess={() => { setBuying(false); reload(); }}
+      />
     </div>
   );
 }

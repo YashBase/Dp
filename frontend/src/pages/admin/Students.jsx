@@ -15,7 +15,7 @@ export default function Students() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: "", username: "", password: "", email: "", mobile: "", enrollment_no: "" });
+  const [form, setForm] = useState({ name: "", username: "", password: "", email: "", mobile: "", enrollment_no: "", class_level: "" });
   const fileRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
@@ -41,7 +41,7 @@ export default function Students() {
       }
       setOpen(false);
       setEditing(null);
-      setForm({ name: "", username: "", password: "", email: "", mobile: "", enrollment_no: "" });
+      setForm({ name: "", username: "", password: "", email: "", mobile: "", enrollment_no: "", class_level: "" });
       load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Failed");
@@ -90,7 +90,7 @@ export default function Students() {
           <Button variant="outline" onClick={() => fileRef.current?.click()} data-testid="bulk-import-btn">
             <Upload className="w-4 h-4 mr-1" /> Bulk Import (xlsx)
           </Button>
-          <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm({ name: "", username: "", password: "", email: "", mobile: "", enrollment_no: "" }); } }}>
+          <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setForm({ name: "", username: "", password: "", email: "", mobile: "", enrollment_no: "", class_level: "" }); } }}>
             <DialogTrigger asChild>
               <Button data-testid="add-student-btn"><Plus className="w-4 h-4 mr-1" /> Add Student</Button>
             </DialogTrigger>
@@ -102,6 +102,17 @@ export default function Students() {
                 <div><Label>Password</Label><Input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "(unchanged)" : "student123"} data-testid="form-password" /></div>
                 <div><Label>Email</Label><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
                 <div><Label>Mobile</Label><Input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} /></div>
+                <div>
+                  <Label>Class / Standard</Label>
+                  <Select value={form.class_level || "none"} onValueChange={(v) => setForm({ ...form, class_level: v === "none" ? "" : v })}>
+                    <SelectTrigger className="rounded-sm" data-testid="form-class-level"><SelectValue placeholder="Not set" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set</SelectItem>
+                      <SelectItem value="11th">11th Standard</SelectItem>
+                      <SelectItem value="12th">12th Standard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="col-span-2"><Label>Enrollment No.</Label><Input value={form.enrollment_no} onChange={(e) => setForm({ ...form, enrollment_no: e.target.value })} /></div>
               </div>
               <DialogFooter>
@@ -140,6 +151,7 @@ export default function Students() {
             <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Username</th>
+              <th className="px-4 py-3">Class</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Enrollment</th>
               <th className="px-4 py-3">Status</th>
@@ -148,12 +160,13 @@ export default function Students() {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-12 text-muted-foreground">No students yet.</td></tr>
+              <tr><td colSpan={7} className="text-center py-12 text-muted-foreground">No students yet.</td></tr>
             )}
             {rows.map((s, i) => (
               <tr key={s.id} className={`border-t border-border ${i % 2 ? "bg-muted/20" : ""}`} data-testid={`student-row-${s.id}`}>
                 <td className="px-4 py-2.5 font-medium">{s.name}</td>
                 <td className="px-4 py-2.5 mono">{s.username}</td>
+                <td className="px-4 py-2.5">{s.class_level ? <Badge variant="outline" className="rounded-sm">{s.class_level}</Badge> : <span className="text-muted-foreground mono text-xs">—</span>}</td>
                 <td className="px-4 py-2.5">{s.email}</td>
                 <td className="px-4 py-2.5 mono">{s.enrollment_no}</td>
                 <td className="px-4 py-2.5">

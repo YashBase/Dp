@@ -58,6 +58,7 @@ export default function Exams() {
                   <div key={e.id} className="grid-card p-5 flex flex-col" data-testid={`s-exam-card-${e.id}`}>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant="outline" className="rounded-sm">{e.type}</Badge>
+                      {e.class_level && <Badge variant="outline" className="rounded-sm mono text-[10px]">{e.class_level}</Badge>}
                       {e.attempted && <Badge className="rounded-sm">ATTEMPTED</Badge>}
                       {e.price > 0 && <Badge variant="secondary" className="rounded-sm">₹{e.price}</Badge>}
                       {(() => { const s = scheduleInfo(e); return s ? (
