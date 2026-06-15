@@ -24,6 +24,9 @@ export default function ExamPortal() {
   const [warnText, setWarnText] = useState("");
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [proctorReady, setProctorReady] = useState(false);
+  const [proctorError, setProctorError] = useState("");
+  const [requestingMedia, setRequestingMedia] = useState(false);
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -44,9 +47,9 @@ export default function ExamPortal() {
     }).catch(() => toast.error("Could not load exam"));
   }, [attemptId, nav]);
 
-  // Timer
+  // Timer — only counts down once proctor is ready
   useEffect(() => {
-    if (!attempt) return;
+    if (!attempt || !proctorReady) return;
     const id = setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) {
@@ -59,7 +62,7 @@ export default function ExamPortal() {
     }, 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
+  }, [attempt, proctorReady]);
 
   // Tab-switch & fullscreen monitoring
   const logViolation = useCallback(async (type) => {
@@ -97,45 +100,71 @@ export default function ExamPortal() {
     };
   }, [logViolation]);
 
-  // Webcam + periodic snapshots
+  // Webcam + periodic snapshots — gated behind an explicit user action so we
+  // can guarantee camera/mic permission AND a verified baseline snapshot
+  // before the exam begins.
+  const initProctoring = async () => {
+    setRequestingMedia(true);
+    setProctorError("");
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 480 }, height: { ideal: 360 }, facingMode: "user" },
+        audio: true,
+      });
+      streamRef.current = s;
+      if (videoRef.current) {
+        videoRef.current.srcObject = s;
+        await videoRef.current.play().catch(() => {});
+      }
+      // Wait for the video element to actually have frames
+      const waitForFrame = () => new Promise((resolve, reject) => {
+        const start = Date.now();
+        const tick = () => {
+          const v = videoRef.current;
+          if (v && v.videoWidth > 0 && v.videoHeight > 0) return resolve();
+          if (Date.now() - start > 8000) return reject(new Error("Camera frame timeout"));
+          setTimeout(tick, 200);
+        };
+        tick();
+      });
+      await waitForFrame();
+      // Capture & upload baseline; require server 200 before letting exam start
+      const c = document.createElement("canvas");
+      c.width = videoRef.current.videoWidth;
+      c.height = videoRef.current.videoHeight;
+      c.getContext("2d").drawImage(videoRef.current, 0, 0, c.width, c.height);
+      const b64 = c.toDataURL("image/jpeg", 0.6).split(",")[1];
+      await api.post("/exams/snapshot", { attempt_id: attemptId, image_base64: b64, violation: "baseline" });
+
+      // All good — schedule regular snapshots + start chunked recording
+      snapTimerRef.current = setInterval(() => captureSnapshot(), 30000);
+      recordingActiveRef.current = true;
+      startRecorderCycle();
+      setProctorReady(true);
+      toast.success("Camera & mic active — exam starting now.");
+    } catch (e) {
+      console.error("Proctor init failed", e);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      const msg = (e && e.name === "NotAllowedError")
+        ? "You denied camera/microphone access. Click Allow in your browser and retry."
+        : (e && e.name === "NotFoundError")
+        ? "No camera or microphone detected. Please connect one and retry."
+        : "Couldn't access camera/mic. " + (e?.message || "");
+      setProctorError(msg);
+    } finally {
+      setRequestingMedia(false);
+    }
+  };
+
   useEffect(() => {
     if (!attempt) return;
-    (async () => {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 480 }, height: { ideal: 360 }, facingMode: "user" },
-          audio: true,
-        });
-        streamRef.current = s;
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          await videoRef.current.play().catch(() => {});
-          const tryBaseline = (attempts = 0) => {
-            const v = videoRef.current;
-            if (!v) return;
-            if (v.videoWidth > 0 && v.videoHeight > 0) {
-              captureSnapshot("baseline");
-            } else if (attempts < 10) {
-              setTimeout(() => tryBaseline(attempts + 1), 500);
-            }
-          };
-          setTimeout(() => tryBaseline(0), 800);
-        }
-        snapTimerRef.current = setInterval(() => captureSnapshot(), 30000);
-        // Start continuous video+audio recording in 30s chunks
-        recordingActiveRef.current = true;
-        startRecorderCycle();
-      } catch (e) {
-        toast.warning("Camera/mic not available — proctoring will be limited.");
-      }
-    })();
     return () => {
       if (snapTimerRef.current) clearInterval(snapTimerRef.current);
       recordingActiveRef.current = false;
       try { recorderRef.current?.stop(); } catch (_) {}
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
 
   const pickMime = () => {
@@ -245,6 +274,55 @@ export default function ExamPortal() {
   };
 
   if (!attempt) return <div className="min-h-screen flex items-center justify-center mono text-sm"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading exam…</div>;
+
+  // Pre-exam gate: require camera + mic + a successful baseline snapshot upload
+  // before exposing the questions. The exam timer doesn't start until proctorReady.
+  if (!proctorReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="grid-card p-6 sm:p-8 max-w-xl w-full">
+          <div className="overline mb-2">// Pre-exam check</div>
+          <h1 className="heading text-2xl sm:text-3xl font-bold">Camera & microphone required</h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            "<b>{attempt.exam_name}</b>" is proctored. Before you begin, we need to:
+          </p>
+          <ul className="mt-3 text-sm space-y-1.5">
+            <li className="flex gap-2"><span className="text-primary">→</span> verify your <b>camera + microphone</b> are working</li>
+            <li className="flex gap-2"><span className="text-primary">→</span> capture your <b>identity baseline photo</b></li>
+            <li className="flex gap-2"><span className="text-primary">→</span> begin continuous video + audio recording</li>
+          </ul>
+
+          <div className="mt-5 aspect-video bg-foreground rounded-sm overflow-hidden">
+            <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
+          </div>
+
+          {proctorError && (
+            <div className="mt-4 border border-destructive text-destructive bg-destructive/10 rounded-sm p-3 text-sm" data-testid="proctor-error">
+              <AlertTriangle className="w-4 h-4 inline mr-1" /> {proctorError}
+            </div>
+          )}
+
+          <Button
+            onClick={initProctoring}
+            disabled={requestingMedia}
+            className="w-full mt-5 rounded-sm h-11"
+            data-testid="enable-camera-btn"
+          >
+            {requestingMedia ? (
+              <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Requesting access…</>
+            ) : (
+              <><Camera className="w-4 h-4 mr-1" /> {proctorError ? "Retry — Enable camera & mic" : "Enable camera & start exam"}</>
+            )}
+          </Button>
+
+          <p className="text-[11px] text-muted-foreground mono mt-3 text-center">
+            Your camera and microphone are used only during this exam to prevent cheating.<br />
+            Without these permissions you cannot start the exam.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const qs = attempt.questions || [];
   const q = qs[curr];
