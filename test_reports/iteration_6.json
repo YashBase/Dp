@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 6 backend-only test of manual UPI payment-request flow + AV recording-chunk upload/playback. 18/18 new tests pass (100%) against https://iit-test-portal.preview.emergentagent.com. All 10 review-request scenarios verified. New regression file at /app/backend/tests/test_iter6_payment_recording.py.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/student/payment-request",
+        "issue": "PaymentRequestIn.utr is declared as a required str in models.py:171-177. The route auto-approves free items (amount==0) BEFORE the runtime utr-length check, so the field is functionally optional for free items — but Pydantic still rejects the request (422) if the 'utr' key is omitted entirely. Tests must send utr='' for free items. Recommend making utr Optional[str]='' in the model so the route's runtime validation alone gates UTR presence."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_behaviors": [
+    "POST /api/student/payment-request with paid course + valid UTR -> 200, payment.status='pending', auto_approved=false, course_ids NOT yet on student, my-payments shows pending.",
+    "Duplicate UTR (second submission by different student) -> 400 'This UTR has already been submitted'.",
+    "Empty UTR for paid item -> 400 'A valid 12-digit UTR / transaction reference is required'.",
+    "Free item (price=0): auto_approved=true, status='success', course_ids gained immediately, GET /api/student/courses returns the course.",
+    "GET /api/admin/payments?status=pending returns pending payments correctly filtered; non-admin -> 403.",
+    "POST /api/admin/payments/{id}/approve -> status='success', approved_at set; student profile course_ids gained; /api/student/courses lists it; /api/student/my-payments shows status='success'.",
+    "POST /api/admin/payments/{id}/reject {reason} -> status='rejected', rejection_reason recorded; student does NOT gain access; re-approving rejected -> 400.",
+    "POST /api/exams/recording-chunk with small base64 webm -> 200 with {id, at, size_bytes}; data stored in proctor_recordings (data_base64 retrievable by admin).",
+    "Chunk with data_base64 length > 2_000_000 chars -> 413 with 'Chunk too large' detail.",
+    "GET /api/exams/admin/attempts/{aid}/recording -> 200 list, sorted ascending by 'at', NO data_base64 field, includes id/at/size_bytes metadata.",
+    "GET /api/exams/admin/attempts/{aid}/recording/{cid} -> 200 video/webm StreamingResponse; r.content equals original raw bytes (b'fake webm data'*100).",
+    "GET /api/public/recording-chunks/{aid} for in_progress attempt -> 404 'Recording not available'.",
+    "GET /api/public/recording-chunks/{aid} for unknown id -> 404.",
+    "GET /api/public/recording-chunks/{aid} for submitted attempt -> 200 list with NO data_base64 (no auth header needed).",
+    "GET /api/public/recording-chunk/{aid}/{cid} -> 200 video/webm stream (no auth); unknown chunk_id -> 404; unknown attempt_id -> 404."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_payment_recording.py",
+    "/app/test_reports/pytest/iter6_results.xml"
+  ],
+  "action_items": [
+    "Consider relaxing PaymentRequestIn.utr to Optional[str]='' so callers don't need to send utr='' explicitly for free items. The route already handles the empty case correctly post-validation; this is purely a client-friendliness/API-contract nit, not a defect."
+  ],
+  "critical_code_review_comments": [
+    "Duplicate-UTR guard in routes_student.py:164 only blocks pending/success payments. A previously rejected payment's UTR remains reusable, which is the intended behaviour (user can resubmit a fresh UTR after rejection) — but consider whether a UTR rejected for 'UTR mismatch' should also be considered 'used' to prevent re-attempts with the same number; current logic is fine for the typical resubmit-with-new-UTR flow.",
+    "routes_exams.py:594 caps chunk at MAX_CHUNK_B64=2_000_000 chars. A 30s 480p WebM with audio at ~500 kbps is well under that (~2 MB raw -> ~2.7 MB base64), which exceeds 2 MB! Consider raising to ~3_000_000 if real WebM chunks at default bitrate trip the cap, or have the client downscale resolution/bitrate.",
+    "models.py:171 PaymentRequestIn.utr is required-str — see action item.",
+    "routes_admin.py:304 approve_payment accepts an Optional PaymentDecisionIn body; FastAPI may treat the body as required if Content-Type is application/json without payload. Current tests pass with {'reason': 'verified'} so this is OK, but document that an empty body works too if intended.",
+    "Recording chunk binary endpoints in routes_exams.py:633 and routes_public.py:107 set 'inline; filename=chunk-{chunk_index}.webm' — no Cache-Control header. For parent playback over slow networks, consider adding 'Cache-Control: private, max-age=300' so seeking re-fetches don't hammer the API."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter6_payment_recording.py"],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "n/a (backend-only task)"},
+  "test_credentials": "admin@gyansai.com / admin123 ; demo / demo123 ; fresh TEST_pay_*/TEST_rec_* students created+deleted per test.",
+  "seed_data_creation": "Created one TEST Free Course (price=0) and possibly one TEST Paid Course (price=2999) if no paid seeded course was present; both are cleaned up in fixture teardown. Multiple transient students created and deleted. The 'fresh_attempt' fixture creates and submits one new attempt (with 2 recording chunks) against a seeded JEE published exam — the submitted attempt + its recording rows are left in DB (harmless, used for parent playback regression checks).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 6 added: (1) POST /api/student/payment-request with state machine pending/success/rejected — distinct from legacy /api/student/checkout (pending_utr/awaiting_review/success/rejected) which still exists. The legacy /api/student/payments/{id}/utr + /api/admin/payments/{id}/verify endpoints from iter5 also still function. (2) /api/exams/recording-chunk + admin & public chunk endpoints alongside the existing snapshot endpoints. Recording chunks live in proctor_recordings collection; snapshots live separately. Both iter5 (test_manual_payments.py) and iter6 (test_iter6_payment_recording.py) regression files should be run together for future payment-related work."
+}

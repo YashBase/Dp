@@ -3,13 +3,14 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { logout, getUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import MobileNavBar from "@/components/MobileNavBar";
-import { LayoutDashboard, GraduationCap, BookOpen, ListChecks, User, LogOut, Calculator } from "lucide-react";
+import { LayoutDashboard, GraduationCap, BookOpen, ListChecks, User, LogOut, Calculator, Receipt } from "lucide-react";
 
 const NAV = [
   { to: "/app", label: "Dashboard", Icon: LayoutDashboard, end: true, id: "snav-dashboard" },
   { to: "/app/exams", label: "Exams", Icon: GraduationCap, id: "snav-exams" },
   { to: "/app/courses", label: "Courses", Icon: BookOpen, id: "snav-courses" },
   { to: "/app/test-series", label: "Test Series", Icon: ListChecks, id: "snav-test-series" },
+  { to: "/app/purchases", label: "My Purchases", Icon: Receipt, id: "snav-purchases" },
   { to: "/app/profile", label: "Profile", Icon: User, id: "snav-profile" },
 ];
 

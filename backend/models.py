@@ -168,6 +168,28 @@ class CheckoutIn(BaseModel):
     coupon: Optional[str] = None
 
 
+class PaymentRequestIn(BaseModel):
+    item_type: str  # course | test_series | exam
+    item_id: str
+    utr: str
+    coupon: Optional[str] = None
+    payer_name: Optional[str] = None
+    note: Optional[str] = None
+
+
+class PaymentDecisionIn(BaseModel):
+    reason: Optional[str] = ""
+
+
+# ---------- Proctor Recording ----------
+class RecordingChunkIn(BaseModel):
+    attempt_id: str
+    data_base64: str
+    mime_type: str = "video/webm"
+    duration_ms: int = 0
+    chunk_index: int = 0
+
+
 # ---------- OCR ----------
 class OcrRequest(BaseModel):
     image_base64: str

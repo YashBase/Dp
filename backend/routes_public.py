@@ -1,4 +1,5 @@
 """Public routes (no auth): institute branding, certificate PDF, public catalogs."""
+import base64
 from io import BytesIO
 import qrcode
 from fastapi import APIRouter, HTTPException
@@ -89,6 +90,35 @@ async def public_result(attempt_id: str):
 async def public_recording(attempt_id: str):
     """Parent-friendly proctoring recording (no auth) — snapshots with images."""
     return await public_recording_full(attempt_id)
+
+
+@router.get("/recording-chunks/{attempt_id}")
+async def public_recording_chunks(attempt_id: str):
+    """Parent-accessible list of video+audio recording chunks for a submitted attempt."""
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0, "id": 1, "status": 1})
+    if not a or a.get("status") != "submitted":
+        raise HTTPException(status_code=404, detail="Recording not available")
+    rows = await db.proctor_recordings.find(
+        {"attempt_id": attempt_id}, {"_id": 0, "data_base64": 0},
+    ).sort("at", 1).to_list(5000)
+    return rows
+
+
+@router.get("/recording-chunk/{attempt_id}/{chunk_id}")
+async def public_recording_chunk(attempt_id: str, chunk_id: str):
+    """Stream a single video+audio chunk for parent playback."""
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0, "id": 1, "status": 1})
+    if not a or a.get("status") != "submitted":
+        raise HTTPException(status_code=404, detail="Recording not available")
+    chunk = await db.proctor_recordings.find_one({"id": chunk_id, "attempt_id": attempt_id}, {"_id": 0})
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+    raw = base64.b64decode(chunk.get("data_base64") or "")
+    return StreamingResponse(
+        BytesIO(raw),
+        media_type=chunk.get("mime_type", "video/webm"),
+        headers={"Content-Disposition": f"inline; filename=chunk-{chunk.get('chunk_index')}.webm"},
+    )
 
 
 @router.get("/certificate/{attempt_id}")

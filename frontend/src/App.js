@@ -14,6 +14,7 @@ const AdminStudents = lazy(() => import("@/pages/admin/Students"));
 const AdminQuestions = lazy(() => import("@/pages/admin/Questions"));
 const AdminExams = lazy(() => import("@/pages/admin/Exams"));
 const AdminResults = lazy(() => import("@/pages/admin/Results"));
+const AdminPayments = lazy(() => import("@/pages/admin/Payments"));
 const AdminEvaluation = lazy(() => import("@/pages/admin/Evaluation"));
 const AdminCourses = lazy(() => import("@/pages/admin/Courses"));
 const AdminTestSeries = lazy(() => import("@/pages/admin/TestSeries"));
@@ -25,6 +26,7 @@ const StudentExams = lazy(() => import("@/pages/student/Exams"));
 const StudentCourses = lazy(() => import("@/pages/student/Courses"));
 const CourseDetail = lazy(() => import("@/pages/student/CourseDetail"));
 const StudentTestSeries = lazy(() => import("@/pages/student/TestSeries"));
+const StudentPurchases = lazy(() => import("@/pages/student/MyPurchases"));
 const ExamPortal = lazy(() => import("@/pages/student/ExamPortal"));
 const Result = lazy(() => import("@/pages/student/Result"));
 const StudentProfile = lazy(() => import("@/pages/student/Profile"));
@@ -58,6 +60,7 @@ function App() {
               <Route path="results" element={<AdminResults />} />
               <Route path="results/:attemptId" element={<AdminResults />} />
               <Route path="evaluation" element={<AdminEvaluation />} />
+              <Route path="payments" element={<AdminPayments />} />
               <Route path="courses" element={<AdminCourses />} />
               <Route path="test-series" element={<AdminTestSeries />} />
               <Route path="settings" element={<AdminSettings />} />
@@ -72,6 +75,7 @@ function App() {
               <Route path="courses" element={<StudentCourses />} />
               <Route path="courses/:id" element={<CourseDetail />} />
               <Route path="test-series" element={<StudentTestSeries />} />
+              <Route path="purchases" element={<StudentPurchases />} />
               <Route path="profile" element={<StudentProfile />} />
               <Route path="result/:attemptId" element={<Result />} />
             </Route>

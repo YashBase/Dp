@@ -12,6 +12,7 @@ export default function PublicResult() {
   const { attemptId } = useParams();
   const [data, setData] = useState(null);
   const [rec, setRec] = useState(null);
+  const [chunks, setChunks] = useState([]);
   const [snapIdx, setSnapIdx] = useState(0);
   const [err, setErr] = useState("");
 
@@ -22,6 +23,9 @@ export default function PublicResult() {
     api.get(`/public/recording/${attemptId}`)
       .then((r) => setRec(r.data))
       .catch(() => setRec({ snapshots: [] }));
+    api.get(`/public/recording-chunks/${attemptId}`)
+      .then((r) => setChunks(r.data || []))
+      .catch(() => setChunks([]));
   }, [attemptId]);
 
   if (err) {
@@ -210,6 +214,28 @@ export default function PublicResult() {
         <p className="text-xs text-muted-foreground mono text-center">
           Certificate ID: <span className="text-foreground">{attemptId}</span>
         </p>
+
+        {chunks.length > 0 && (
+          <section className="grid-card p-5">
+            <div className="overline mb-3 flex items-center gap-2"><Camera className="w-3 h-3" /> Video + Audio Recording ({chunks.length} clips)</div>
+            <p className="text-xs text-muted-foreground mb-3">Watch the full proctoring recording — each clip captures ~30 seconds of webcam video with audio.</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              {chunks.map((c, i) => (
+                <div key={c.id} className="border border-border rounded-sm overflow-hidden" data-testid={`parent-recording-chunk-${i}`}>
+                  <video
+                    controls preload="metadata"
+                    src={`${API}/public/recording-chunk/${attemptId}/${c.id}`}
+                    className="w-full aspect-video bg-foreground"
+                  />
+                  <div className="px-3 py-1.5 text-[10px] mono text-muted-foreground flex justify-between">
+                    <span>Clip #{c.chunk_index + 1} · {(c.at || "").slice(11, 19)}</span>
+                    <span>{Math.round((c.size_bytes || 0) / 1024)} KB</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

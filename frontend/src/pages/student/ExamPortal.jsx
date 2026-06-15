@@ -28,6 +28,9 @@ export default function ExamPortal() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const snapTimerRef = useRef(null);
+  const recorderRef = useRef(null);
+  const recordingActiveRef = useRef(false);
+  const chunkIndexRef = useRef(0);
 
   // Load attempt
   useEffect(() => {
@@ -101,13 +104,12 @@ export default function ExamPortal() {
       try {
         const s = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 480 }, height: { ideal: 360 }, facingMode: "user" },
-          audio: false,
+          audio: true,
         });
         streamRef.current = s;
         if (videoRef.current) {
           videoRef.current.srcObject = s;
           await videoRef.current.play().catch(() => {});
-          // Identity baseline: wait until video has real dimensions then capture
           const tryBaseline = (attempts = 0) => {
             const v = videoRef.current;
             if (!v) return;
@@ -119,18 +121,77 @@ export default function ExamPortal() {
           };
           setTimeout(() => tryBaseline(0), 800);
         }
-        // Regular snapshots every 30 seconds
         snapTimerRef.current = setInterval(() => captureSnapshot(), 30000);
+        // Start continuous video+audio recording in 30s chunks
+        recordingActiveRef.current = true;
+        startRecorderCycle();
       } catch (e) {
-        toast.warning("Webcam not available — proctoring will be limited.");
+        toast.warning("Camera/mic not available — proctoring will be limited.");
       }
     })();
     return () => {
       if (snapTimerRef.current) clearInterval(snapTimerRef.current);
+      recordingActiveRef.current = false;
+      try { recorderRef.current?.stop(); } catch (_) {}
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
+
+  const pickMime = () => {
+    const opts = [
+      "video/webm;codecs=vp8,opus",
+      "video/webm;codecs=vp9,opus",
+      "video/webm",
+      "video/mp4",
+    ];
+    for (const m of opts) {
+      if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) return m;
+    }
+    return "";
+  };
+
+  const startRecorderCycle = () => {
+    if (!streamRef.current || !recordingActiveRef.current) return;
+    let rec;
+    try {
+      const opts = pickMime() ? { mimeType: pickMime(), videoBitsPerSecond: 200_000, audioBitsPerSecond: 64_000 } : {};
+      rec = new MediaRecorder(streamRef.current, opts);
+    } catch (e) {
+      console.warn("MediaRecorder unavailable", e);
+      return;
+    }
+    recorderRef.current = rec;
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    rec.onstop = async () => {
+      if (chunks.length === 0) {
+        if (recordingActiveRef.current) startRecorderCycle();
+        return;
+      }
+      const blob = new Blob(chunks, { type: rec.mimeType || "video/webm" });
+      if (blob.size > 0 && blob.size < 5 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const b64 = String(reader.result || "").split(",")[1] || "";
+          if (b64) {
+            const idx = chunkIndexRef.current++;
+            api.post("/exams/recording-chunk", {
+              attempt_id: attemptId,
+              data_base64: b64,
+              mime_type: blob.type || "video/webm",
+              duration_ms: 30000,
+              chunk_index: idx,
+            }).catch(() => {});
+          }
+        };
+        reader.readAsDataURL(blob);
+      }
+      if (recordingActiveRef.current) startRecorderCycle();
+    };
+    try { rec.start(); } catch (_) { return; }
+    setTimeout(() => { try { rec.state === "recording" && rec.stop(); } catch (_) {} }, 30000);
+  };
 
   // Re-bind webcam stream to the live <video> element whenever it remounts
   // (e.g. when the mobile palette sheet opens/closes).

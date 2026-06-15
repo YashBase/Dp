@@ -3,28 +3,22 @@ import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import PaymentDialog from "@/components/PaymentDialog";
 
 export default function Courses() {
   const [rows, setRows] = useState([]);
+  const [buying, setBuying] = useState(null);
 
-  useEffect(() => { api.get("/student/courses").then((r) => setRows(r.data)); }, []);
-
-  const buy = async (c) => {
-    try {
-      await api.post("/student/checkout", { item_type: "course", item_id: c.id });
-      toast.success("Enrolled (mock payment).");
-      const { data } = await api.get("/student/courses"); setRows(data);
-    } catch (e) { toast.error("Checkout failed"); }
-  };
+  const load = async () => { const { data } = await api.get("/student/courses"); setRows(data); };
+  useEffect(() => { load(); }, []);
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-8 space-y-6">
       <header>
         <div className="overline">// Learning</div>
         <h1 className="heading text-3xl font-bold mt-1">Courses</h1>
       </header>
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {rows.length === 0 && <div className="col-span-full text-muted-foreground">No courses yet.</div>}
         {rows.map((c) => (
           <div key={c.id} className="grid-card overflow-hidden brutalist-hover">
@@ -36,7 +30,7 @@ export default function Courses() {
               <div className="flex items-center justify-between mt-4">
                 <span className="mono font-bold">{c.price > 0 ? `₹${c.price}` : "FREE"}</span>
                 {c.price > 0 ? (
-                  <Button size="sm" onClick={() => buy(c)} data-testid={`buy-course-${c.id}`}>Buy</Button>
+                  <Button size="sm" onClick={() => setBuying({ ...c, type: "course" })} data-testid={`buy-course-${c.id}`}>Buy</Button>
                 ) : (
                   <Link to={`/app/courses/${c.id}`}><Button size="sm" variant="outline">Open</Button></Link>
                 )}
@@ -45,6 +39,11 @@ export default function Courses() {
           </div>
         ))}
       </div>
+
+      <PaymentDialog
+        open={!!buying} onOpenChange={(o) => !o && setBuying(null)}
+        item={buying} onSuccess={() => { setBuying(null); load(); }}
+      />
     </div>
   );
 }

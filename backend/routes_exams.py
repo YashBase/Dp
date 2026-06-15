@@ -1,12 +1,15 @@
 """Exam routes: admin CRUD, student start/save/submit, proctoring & results."""
 import random
+import base64
+from io import BytesIO
 from typing import Optional, List, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from core import db, require_admin, require_student, get_current_user, new_id, now_utc, iso
 from models import (
     ExamIn, StartAttemptIn, SaveAnswerIn, SubmitAttemptIn,
-    TabSwitchLogIn, SnapshotIn,
+    TabSwitchLogIn, SnapshotIn, RecordingChunkIn,
 )
 
 router = APIRouter(prefix="/exams", tags=["exams"])
@@ -569,6 +572,72 @@ async def save_evaluation(attempt_id: str, payload: dict, _admin=Depends(require
         "created_at": iso(now_utc()),
     })
     return await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
+
+
+
+# ---------- Continuous Video+Audio Recording ----------
+MAX_CHUNK_B64 = 2_000_000  # ~1.5 MB raw per 30s chunk
+
+
+@router.post("/recording-chunk")
+async def upload_recording_chunk(data: RecordingChunkIn, student=Depends(require_student)):
+    """Receive a video+audio chunk (e.g. 30-second WebM clip) from the exam portal."""
+    a = await db.attempts.find_one(
+        {"id": data.attempt_id, "student_id": student["id"]},
+        {"_id": 0, "id": 1, "status": 1},
+    )
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    b64 = data.data_base64 or ""
+    if "," in b64 and b64.lstrip().lower().startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    if len(b64) > MAX_CHUNK_B64:
+        raise HTTPException(status_code=413, detail=f"Chunk too large (max {MAX_CHUNK_B64} chars base64)")
+    chunk = {
+        "id": new_id(),
+        "attempt_id": data.attempt_id,
+        "student_id": student["id"],
+        "chunk_index": data.chunk_index,
+        "duration_ms": data.duration_ms,
+        "mime_type": data.mime_type or "video/webm",
+        "size_bytes": len(b64),
+        "data_base64": b64,
+        "at": iso(now_utc()),
+    }
+    await db.proctor_recordings.insert_one(chunk)
+    return {"id": chunk["id"], "at": chunk["at"], "size_bytes": chunk["size_bytes"]}
+
+
+def _decode_chunk_response(chunk: dict) -> StreamingResponse:
+    raw = base64.b64decode(chunk.get("data_base64") or "")
+    return StreamingResponse(
+        BytesIO(raw),
+        media_type=chunk.get("mime_type", "video/webm"),
+        headers={"Content-Disposition": f"inline; filename=chunk-{chunk.get('chunk_index')}.webm"},
+    )
+
+
+@router.get("/admin/attempts/{attempt_id}/recording")
+async def admin_attempt_recording(attempt_id: str, _admin=Depends(require_admin)):
+    """List recording chunks for an attempt (metadata only — no payload)."""
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0, "id": 1})
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    rows = await db.proctor_recordings.find(
+        {"attempt_id": attempt_id},
+        {"_id": 0, "data_base64": 0},
+    ).sort("at", 1).to_list(5000)
+    return rows
+
+
+@router.get("/admin/attempts/{attempt_id}/recording/{chunk_id}")
+async def admin_attempt_recording_chunk(attempt_id: str, chunk_id: str, _admin=Depends(require_admin)):
+    chunk = await db.proctor_recordings.find_one({"id": chunk_id, "attempt_id": attempt_id}, {"_id": 0})
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+    return _decode_chunk_response(chunk)
+
+
 
 
 

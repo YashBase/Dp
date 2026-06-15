@@ -2,126 +2,128 @@ import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, Loader2, IndianRupee, ClipboardCheck, Copy } from "lucide-react";
-
-const STATUS_COLORS = {
-  pending_utr: "secondary",
-  awaiting_review: "default",
-  success: "default",
-  rejected: "destructive",
-};
-const STATUS_LABELS = {
-  pending_utr: "PENDING UTR",
-  awaiting_review: "AWAITING REVIEW",
-  success: "VERIFIED",
-  rejected: "REJECTED",
-};
+import { CheckCircle2, XCircle, Loader2, RefreshCcw, IndianRupee } from "lucide-react";
 
 export default function Payments() {
   const [rows, setRows] = useState([]);
-  const [filter, setFilter] = useState("awaiting_review");
+  const [status, setStatus] = useState("pending");
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [picked, setPicked] = useState(null);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [rejecting, setRejecting] = useState(null);
+  const [reason, setReason] = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
-      const params = filter !== "all" ? { status: filter } : {};
+      const params = status === "all" ? {} : { status };
       const { data } = await api.get("/admin/payments", { params });
       setRows(data);
     } finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
 
-  const verify = async (approved) => {
-    if (!picked) return;
-    setBusy(true);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
+
+  const approve = async (p) => {
     try {
-      await api.post(`/admin/payments/${picked.id}/verify`, { approved, note });
-      toast.success(approved ? "Payment approved — access granted to student." : "Payment rejected.");
-      setOpen(false); setPicked(null); setNote("");
+      await api.post(`/admin/payments/${p.id}/approve`, { reason: "" });
+      toast.success(`Approved — access granted to ${p.user_name}`);
       load();
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Failed");
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e?.response?.data?.detail || "Approve failed"); }
   };
 
-  const counts = rows.reduce((a, p) => { a[p.status] = (a[p.status] || 0) + 1; return a; }, {});
+  const reject = async () => {
+    if (!rejecting) return;
+    try {
+      await api.post(`/admin/payments/${rejecting.id}/reject`, { reason: reason || "Not specified" });
+      toast.success("Payment rejected");
+      setRejecting(null); setReason("");
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Reject failed"); }
+  };
+
+  const totals = rows.reduce((a, r) => { a[r.status] = (a[r.status] || 0) + 1; return a; }, {});
 
   return (
-    <div className="p-8 space-y-6">
-      <header>
-        <div className="overline">// Finance</div>
-        <h1 className="heading text-3xl font-bold mt-1">Payment Verification</h1>
-        <p className="text-sm text-muted-foreground mt-1">Manual UPI / bank transfer verification queue. Approve to grant student access instantly.</p>
+    <div className="p-4 sm:p-8 space-y-6">
+      <header className="flex flex-wrap items-end gap-4 justify-between">
+        <div>
+          <div className="overline">// Payments</div>
+          <h1 className="heading text-3xl font-bold mt-1">Payment Approvals</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Verify UTRs, approve within <b>1 hour</b> to unlock access. {totals.pending ? `${totals.pending} pending now.` : "Nothing pending — great!"}
+          </p>
+        </div>
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="overline text-[10px]">Filter status</label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="w-44 rounded-sm" data-testid="pay-status-filter"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="success">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" onClick={load} className="rounded-sm"><RefreshCcw className="w-4 h-4" /></Button>
+        </div>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <Label className="text-xs">Status filter</Label>
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-56 rounded-sm"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="awaiting_review">Awaiting review</SelectItem>
-              <SelectItem value="pending_utr">Pending UTR submission</SelectItem>
-              <SelectItem value="success">Verified</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="ml-auto flex gap-2 text-xs mono">
-          <Badge variant="default" className="rounded-sm">{counts.awaiting_review || 0} awaiting</Badge>
-          <Badge variant="secondary" className="rounded-sm">{counts.success || 0} verified</Badge>
-        </div>
-      </div>
-
       <div className="grid-card overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[800px]">
           <thead className="bg-muted/50">
             <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-3">Created</th>
+              <th className="px-4 py-3">Submitted</th>
               <th className="px-4 py-3">Student</th>
               <th className="px-4 py-3">Item</th>
               <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">UTR</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3"></th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} className="py-12 text-center text-muted-foreground"><Loader2 className="w-4 h-4 inline animate-spin mr-2" />Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} className="py-12 text-center text-muted-foreground">No payments found.</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} className="py-12 text-center text-muted-foreground">No payments match.</td></tr>}
             {rows.map((p, i) => (
-              <tr key={p.id} className={`border-t border-border ${i % 2 ? "bg-muted/20" : ""}`} data-testid={`payment-row-${p.id}`}>
-                <td className="px-4 py-2.5 mono text-xs">{(p.created_at || "").slice(0, 19).replace("T", " ")}</td>
+              <tr key={p.id} className={`border-t border-border ${i % 2 ? "bg-muted/20" : ""}`} data-testid={`pay-row-${p.id}`}>
+                <td className="px-4 py-2.5 mono text-xs whitespace-nowrap">{(p.created_at || "").slice(0, 16).replace("T", " ")}</td>
                 <td className="px-4 py-2.5">
                   <div className="font-medium">{p.user_name}</div>
-                  <div className="text-xs text-muted-foreground mono">{p.user_mobile || p.user_email || "—"}</div>
+                  <div className="text-xs text-muted-foreground mono">{p.user_username || ""}</div>
                 </td>
-                <td className="px-4 py-2.5"><div>{p.item_name}</div><div className="text-xs text-muted-foreground mono">{p.item_type}</div></td>
-                <td className="px-4 py-2.5 mono font-bold">₹{p.amount}</td>
-                <td className="px-4 py-2.5 mono text-xs">
-                  {p.utr || <span className="text-muted-foreground italic">—</span>}
-                  {p.utr && <button onClick={() => { navigator.clipboard.writeText(p.utr); toast.success("UTR copied"); }} className="ml-1 text-primary hover:underline"><Copy className="w-3 h-3 inline" /></button>}
-                </td>
-                <td className="px-4 py-2.5"><Badge variant={STATUS_COLORS[p.status] || "outline"} className="rounded-sm">{STATUS_LABELS[p.status] || p.status}</Badge></td>
                 <td className="px-4 py-2.5">
-                  {p.status === "awaiting_review" && (
-                    <Button size="sm" variant="outline" onClick={() => { setPicked(p); setOpen(true); }} data-testid={`review-${p.id}`}>
-                      <ClipboardCheck className="w-3 h-3 mr-1" /> Review
-                    </Button>
+                  <div>{p.item_name}</div>
+                  <div className="text-xs text-muted-foreground">{p.item_type}</div>
+                </td>
+                <td className="px-4 py-2.5 mono font-bold"><IndianRupee className="w-3 h-3 inline" />{p.amount}</td>
+                <td className="px-4 py-2.5 mono text-xs">{p.utr || "—"}{p.coupon && <div className="text-[10px]">+ {p.coupon}</div>}</td>
+                <td className="px-4 py-2.5">
+                  <Badge variant={p.status === "success" ? "default" : p.status === "rejected" ? "destructive" : "secondary"} className="rounded-sm">
+                    {p.status.toUpperCase()}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2.5">
+                  {p.status === "pending" ? (
+                    <div className="flex gap-1">
+                      <Button size="sm" onClick={() => approve(p)} className="rounded-sm" data-testid={`pay-approve-${p.id}`}>
+                        <CheckCircle2 className="w-3 h-3 mr-1" /> Approve
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => { setRejecting(p); setReason(""); }} data-testid={`pay-reject-${p.id}`}>
+                        <XCircle className="w-3 h-3 mr-1" /> Reject
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground mono">
+                      {p.approved_at ? `✓ ${p.approved_at.slice(0, 16).replace("T", " ")}` : ""}
+                      {p.rejected_at ? `✗ ${p.rejected_at.slice(0, 16).replace("T", " ")}` : ""}
+                      {p.rejection_reason && <div className="mt-1 text-destructive">{p.rejection_reason}</div>}
+                    </div>
                   )}
-                  {p.admin_note && <div className="text-[10px] text-muted-foreground mt-1 max-w-[180px] truncate" title={p.admin_note}>{p.admin_note}</div>}
                 </td>
               </tr>
             ))}
@@ -129,33 +131,14 @@ export default function Payments() {
         </table>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={!!rejecting} onOpenChange={(o) => !o && setRejecting(null)}>
         <DialogContent className="rounded-sm">
-          <DialogHeader><DialogTitle>Verify payment</DialogTitle></DialogHeader>
-          {picked && (
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div><div className="overline">Student</div><div className="font-medium mt-1">{picked.user_name}</div><div className="text-xs text-muted-foreground mono">{picked.user_mobile || picked.user_email}</div></div>
-                <div><div className="overline">Item</div><div className="font-medium mt-1">{picked.item_name}</div><div className="text-xs text-muted-foreground mono">{picked.item_type}</div></div>
-                <div><div className="overline">Amount</div><div className="mono text-xl font-bold mt-1"><IndianRupee className="w-3 h-3 inline" />{picked.amount}</div>{picked.discount > 0 && <div className="text-xs text-muted-foreground mono">coupon {picked.coupon} · ₹{picked.discount} off</div>}</div>
-                <div><div className="overline">UTR submitted</div><div className="mono mt-1 break-all">{picked.utr}</div><div className="text-[10px] text-muted-foreground mono">{(picked.utr_submitted_at || "").slice(0, 19).replace("T", " ")}</div></div>
-              </div>
-              <div>
-                <Label className="text-xs">Admin note (optional, visible to student)</Label>
-                <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Verified on UPI portal · GS-bank reconciled." className="rounded-sm mt-1" data-testid="verify-note" />
-              </div>
-              <div className="text-[11px] text-muted-foreground mono border-l-2 border-primary pl-2">
-                Cross-check the UTR in your bank's UPI dashboard. On approval, the student gets immediate access.
-              </div>
-            </div>
-          )}
+          <DialogHeader><DialogTitle>Reject payment</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Tell the student why their payment couldn't be verified — they'll see this reason in <b>My Purchases</b>.</p>
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. UTR not found in our bank statement" className="rounded-sm" data-testid="pay-reject-reason" />
           <DialogFooter>
-            <Button variant="outline" onClick={() => verify(false)} disabled={busy} data-testid="reject-btn">
-              <XCircle className="w-4 h-4 mr-1 text-destructive" /> Reject
-            </Button>
-            <Button onClick={() => verify(true)} disabled={busy} data-testid="approve-btn">
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle2 className="w-4 h-4 mr-1" /> Approve & Grant Access</>}
-            </Button>
+            <Button variant="outline" onClick={() => setRejecting(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={reject} data-testid="pay-reject-confirm">Reject payment</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

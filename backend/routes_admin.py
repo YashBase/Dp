@@ -5,7 +5,8 @@ from typing import List, Optional
 import openpyxl
 from core import db, require_admin, hash_password, new_id, now_utc, iso, clean_doc
 from models import (
-    InstituteSettingsIn, StudentIn, StudentUpdate, CourseIn, TestSeriesIn
+    InstituteSettingsIn, StudentIn, StudentUpdate, CourseIn, TestSeriesIn,
+    PaymentDecisionIn,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -289,3 +290,73 @@ async def update_test_series(ts_id: str, data: TestSeriesIn, _admin=Depends(requ
 async def delete_test_series(ts_id: str, _admin=Depends(require_admin)):
     await db.test_series.delete_one({"id": ts_id})
     return {"ok": True}
+
+
+# ---------- Payments approval ----------
+@router.get("/payments")
+async def list_payments(_admin=Depends(require_admin), status: Optional[str] = None):
+    flt = {}
+    if status:
+        flt["status"] = status
+    return await db.payments.find(flt, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+
+@router.post("/payments/{payment_id}/approve")
+async def approve_payment(payment_id: str, payload: Optional[PaymentDecisionIn] = None, _admin=Depends(require_admin)):
+    p = await db.payments.find_one({"id": payment_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if p.get("status") != "pending":
+        raise HTTPException(status_code=400, detail=f"Payment is already {p.get('status')}")
+
+    # Re-fetch item & grant access
+    coll_map = {"course": "courses", "test_series": "test_series", "exam": "exams"}
+    coll = coll_map.get(p["item_type"])
+    item = await db[coll].find_one({"id": p["item_id"]}, {"_id": 0}) if coll else None
+    if not item:
+        raise HTTPException(status_code=404, detail="Underlying item no longer exists")
+
+    if p["item_type"] == "course":
+        await db.students.update_one({"id": p["user_id"]}, {"$addToSet": {"course_ids": p["item_id"]}})
+    elif p["item_type"] == "exam":
+        await db.students.update_one({"id": p["user_id"]}, {"$addToSet": {"exam_ids": p["item_id"]}})
+    elif p["item_type"] == "test_series":
+        ids = item.get("exam_ids") or []
+        if ids:
+            await db.students.update_one({"id": p["user_id"]}, {"$addToSet": {"exam_ids": {"$each": ids}}})
+
+    update = {
+        "status": "success",
+        "approved_at": iso(now_utc()),
+        "approval_note": (payload.reason if payload else "") or "",
+    }
+    await db.payments.update_one({"id": payment_id}, {"$set": update})
+    await db.activities.insert_one({
+        "id": new_id(),
+        "type": "payment_approved",
+        "text": f"Approved payment of ₹{p.get('amount')} from {p.get('user_name')} for '{p.get('item_name')}' (UTR {p.get('utr')})",
+        "created_at": iso(now_utc()),
+    })
+    return await db.payments.find_one({"id": payment_id}, {"_id": 0})
+
+
+@router.post("/payments/{payment_id}/reject")
+async def reject_payment(payment_id: str, payload: PaymentDecisionIn, _admin=Depends(require_admin)):
+    p = await db.payments.find_one({"id": payment_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if p.get("status") != "pending":
+        raise HTTPException(status_code=400, detail=f"Payment is already {p.get('status')}")
+    await db.payments.update_one({"id": payment_id}, {"$set": {
+        "status": "rejected",
+        "rejected_at": iso(now_utc()),
+        "rejection_reason": payload.reason or "Not specified",
+    }})
+    await db.activities.insert_one({
+        "id": new_id(),
+        "type": "payment_rejected",
+        "text": f"Rejected payment from {p.get('user_name')} for '{p.get('item_name')}' — {payload.reason or 'no reason'}",
+        "created_at": iso(now_utc()),
+    })
+    return await db.payments.find_one({"id": payment_id}, {"_id": 0})
+

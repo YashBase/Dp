@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import MobileNavBar from "@/components/MobileNavBar";
 import {
   LayoutDashboard, Users, FileQuestion, GraduationCap,
-  BookOpen, ListChecks, Settings, LogOut, Calculator, ClipboardCheck, FileBarChart
+  BookOpen, ListChecks, Settings, LogOut, Calculator, ClipboardCheck, FileBarChart, IndianRupee
 } from "lucide-react";
 
 const NAV = [
@@ -15,6 +15,7 @@ const NAV = [
   { to: "/admin/exams", label: "Exams", Icon: GraduationCap, id: "nav-exams" },
   { to: "/admin/results", label: "Results & Recording", Icon: FileBarChart, id: "nav-results" },
   { to: "/admin/evaluation", label: "Evaluation", Icon: ClipboardCheck, id: "nav-evaluation" },
+  { to: "/admin/payments", label: "Payments", Icon: IndianRupee, id: "nav-payments" },
   { to: "/admin/courses", label: "Courses", Icon: BookOpen, id: "nav-courses" },
   { to: "/admin/test-series", label: "Test Series", Icon: ListChecks, id: "nav-test-series" },
   { to: "/admin/settings", label: "Settings", Icon: Settings, id: "nav-settings" },
