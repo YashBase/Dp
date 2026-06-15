@@ -76,6 +76,15 @@ Build a complete production-ready SaaS Online Examination & LMS for an Indian II
 - **Quick-Assign Exam Wizard** — new button (`quick-assign-btn`) in Question Bank header opens "Folder → Class → Exam" dialog. Picks a folder + class (11th/12th) + tag (JEE Mains/Adv/MHT-CET/NEET) + exam name → backend `POST /api/questions/quick-assign-exam` creates an exam with ALL questions in that folder and auto-assigns it to every active student of that class. Returns `{exam, questions_count, assigned_count}`.
 - Tested via `/app/test_reports/iteration_9.json` — 8/8 backend pytest + all UI selectors verified, including class-filter exclusion (11th student doesn't see a 12th-only auto-exam).
 
+## Recent Changes (2026-06-15, night) — Unified Exam-Folder Manager (Iter 10)
+- **Create Exam Folder dialog** inside Question Bank — new "Create Exam Folder" button (`create-folder-btn`) opens a 3-tab dialog:
+  1. **Folder Info** — folder name (locked on edit), exam name, class (11th/12th/Any), tag preset chips, duration, passing marks, tab-switch limit, publish/webcam/randomize switches.
+  2. **Questions** — searchable list, subject filter, multi-select. Optional `tag_questions_to_folder` (default ON) stamps each picked question with the folder name so they appear under that 📁 badge.
+  3. **Students** — manual multi-select **+** auto-assign-all-of-class switch (hybrid). List filters to the chosen class for safety.
+- **Folder cards grid** above Question Bank shows existing folders with question count, student count, class/tag badges, LIVE/DRAFT status. Click "Edit" to re-open the dialog pre-populated; "Delete" to drop the folder tag and the linked exam.
+- **Backend endpoints**: `GET /api/questions/folders`, `POST /api/questions/folder-exam` (upsert by `exam_id`), `DELETE /api/questions/folders/{name}`.
+- Tested via `/app/test_reports/iteration_10.json` — **11/11 backend pytests**, all 22 UI selectors green, end-to-end create→edit→delete + class auto-fan-out + exam_ids $pull-on-removal all verified.
+
 ## Next Action Items
 1. Notifications system (Resend email + Twilio SMS) — P1
 2. Live Razorpay checkout — P1
