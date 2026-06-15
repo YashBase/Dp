@@ -2,6 +2,7 @@ import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { logout, getUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import MobileNavBar from "@/components/MobileNavBar";
 import {
   LayoutDashboard, Users, FileQuestion, GraduationCap,
   BookOpen, ListChecks, Settings, LogOut, Calculator, ClipboardCheck, FileBarChart
@@ -23,9 +24,21 @@ export default function AdminLayout() {
   const nav = useNavigate();
   const user = getUser() || {};
 
+  const signOutFooter = (
+    <>
+      <div className="text-xs px-3 py-2 mono truncate">{user.email}</div>
+      <Button variant="outline" className="w-full justify-start rounded-sm" data-testid="admin-logout-btn"
+              onClick={() => { logout(); nav("/login"); }}>
+        <LogOut className="w-4 h-4 mr-2" /> Sign Out
+      </Button>
+    </>
+  );
+
   return (
-    <div className="min-h-screen flex bg-background">
-      <aside className="w-64 border-r border-border flex flex-col bg-card">
+    <div className="min-h-screen flex flex-col md:flex-row bg-background">
+      <MobileNavBar brand="Gyansai" subtitle="Admin Console" items={NAV} footer={signOutFooter} />
+
+      <aside className="hidden md:flex w-64 border-r border-border flex-col bg-card shrink-0">
         <div className="p-5 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-primary text-primary-foreground flex items-center justify-center rounded-sm">
@@ -37,7 +50,7 @@ export default function AdminLayout() {
             </div>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {NAV.map(({ to, label, Icon, end, id }) => (
             <NavLink key={to} to={to} end={end} data-testid={id}
               className={({ isActive }) =>
@@ -49,15 +62,10 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="p-3 border-t border-border">
-          <div className="text-xs px-3 py-2 mono truncate">{user.email}</div>
-          <Button variant="outline" className="w-full justify-start rounded-sm" data-testid="admin-logout-btn"
-                  onClick={() => { logout(); nav("/login"); }}>
-            <LogOut className="w-4 h-4 mr-2" /> Sign Out
-          </Button>
-        </div>
+        <div className="p-3 border-t border-border">{signOutFooter}</div>
       </aside>
-      <main className="flex-1 overflow-x-hidden">
+
+      <main className="flex-1 min-w-0 overflow-x-hidden">
         <Outlet />
       </main>
     </div>

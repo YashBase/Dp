@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import {
-  Clock, Flag, ChevronLeft, ChevronRight, Camera, Maximize, AlertTriangle, Loader2, Send, X
+  Clock, Flag, ChevronLeft, ChevronRight, Camera, Maximize, AlertTriangle, Loader2, Send, X, Grid3x3
 } from "lucide-react";
 
 export default function ExamPortal() {
@@ -22,6 +23,7 @@ export default function ExamPortal() {
   const [warnOpen, setWarnOpen] = useState(false);
   const [warnText, setWarnText] = useState("");
   const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -130,6 +132,16 @@ export default function ExamPortal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
 
+  // Re-bind webcam stream to the live <video> element whenever it remounts
+  // (e.g. when the mobile palette sheet opens/closes).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v && streamRef.current && v.srcObject !== streamRef.current) {
+      v.srcObject = streamRef.current;
+      v.play().catch(() => {});
+    }
+  }, [paletteOpen, attempt]);
+
   const captureSnapshot = async (violation = null) => {
     if (!videoRef.current || !streamRef.current) return;
     const v = videoRef.current;
@@ -185,32 +197,99 @@ export default function ExamPortal() {
 
   const isLowTime = timeLeft < 300;
 
+  // Reusable palette + webcam panel (used in both desktop sidebar and mobile sheet)
+  const PaletteContent = ({ closeBtn = false, onClose }) => (
+    <div className="flex flex-col h-full">
+      {closeBtn && (
+        <div className="p-3 border-b border-border flex items-center justify-between">
+          <div className="overline">Tools</div>
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-sm"><X className="w-4 h-4" /></Button>
+        </div>
+      )}
+      <div className="p-4 border-b border-border">
+        <div className="overline mb-2 flex items-center gap-1"><Camera className="w-3 h-3" /> Proctoring</div>
+        <div className="aspect-video bg-foreground rounded-sm overflow-hidden">
+          <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 text-xs mono">
+          <div className="border border-border p-1.5 rounded-sm"><div className="overline text-[9px]">Tab switches</div><div className="font-bold mt-0.5">{attempt.tab_switches || 0}/{attempt.allowed_tab_switches}</div></div>
+          <div className="border border-border p-1.5 rounded-sm"><div className="overline text-[9px]">Violations</div><div className="font-bold mt-0.5">{(attempt.violations || []).length}</div></div>
+        </div>
+      </div>
+
+      <div className="p-4 border-b border-border">
+        <div className="overline mb-2">Status</div>
+        <div className="grid grid-cols-3 gap-1 text-[11px]">
+          <div className="palette-answered p-2 text-center rounded-sm mono font-bold">{counts.answered}</div>
+          <div className="palette-review p-2 text-center rounded-sm mono font-bold">{counts.review}</div>
+          <div className="palette-empty p-2 text-center rounded-sm mono font-bold">{counts.notVisited}</div>
+        </div>
+        <div className="grid grid-cols-3 gap-1 text-[9px] uppercase tracking-wider text-muted-foreground mt-1 text-center">
+          <span>Answered</span><span>Review</span><span>Empty</span>
+        </div>
+      </div>
+
+      <div className="p-4 flex-1 overflow-y-auto">
+        <div className="overline mb-2">Question palette</div>
+        <div className="grid grid-cols-5 gap-1.5">
+          {qs.map((qq, i) => {
+            const st = answers[qq.id]?.status;
+            let cls = "palette-empty";
+            if (i === curr) cls = "palette-current";
+            else if (st === "answered") cls = "palette-answered";
+            else if (st === "review") cls = "palette-review";
+            return (
+              <button key={qq.id} onClick={() => { setCurr(i); onClose && onClose(); }} data-testid={`palette-q-${i}`}
+                      className={`aspect-square text-xs font-bold border-2 rounded-sm mono ${cls}`}>
+                {i + 1}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Top bar */}
-      <header className="border-b border-border bg-card px-6 py-3 flex items-center justify-between gap-4 shrink-0">
-        <div>
-          <div className="overline text-[10px]">// Exam in progress</div>
-          <h1 className="heading text-base font-bold leading-tight">{attempt.exam_name}</h1>
+      <header className="border-b border-border bg-card px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 shrink-0">
+        <div className="min-w-0 flex-1">
+          <div className="overline text-[10px] hidden sm:block">// Exam in progress</div>
+          <h1 className="heading text-xs sm:text-base font-bold leading-tight truncate">{attempt.exam_name}</h1>
         </div>
-        <div className="flex items-center gap-3">
-          <div className={`mono font-bold text-lg flex items-center gap-2 px-3 py-1.5 border rounded-sm ${isLowTime ? "border-destructive text-destructive animate-pulse" : "border-border"}`} data-testid="exam-timer">
-            <Clock className="w-4 h-4" /> {fmtTime(timeLeft)}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          <div className={`mono font-bold text-sm sm:text-lg flex items-center gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 border rounded-sm ${isLowTime ? "border-destructive text-destructive animate-pulse" : "border-border"}`} data-testid="exam-timer">
+            <Clock className="w-3 h-3 sm:w-4 sm:h-4" /> <span>{fmtTime(timeLeft)}</span>
           </div>
-          <Button variant="outline" size="sm" onClick={goFullscreen} data-testid="fullscreen-btn"><Maximize className="w-4 h-4" /></Button>
+          <Button variant="outline" size="sm" onClick={goFullscreen} data-testid="fullscreen-btn" className="hidden sm:inline-flex">
+            <Maximize className="w-4 h-4" />
+          </Button>
+          {/* Mobile palette trigger */}
+          <Sheet open={paletteOpen} onOpenChange={setPaletteOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="lg:hidden rounded-sm relative" data-testid="open-palette-btn">
+                <Grid3x3 className="w-4 h-4" />
+                {counts.review > 0 && <span className="absolute -top-1.5 -right-1.5 bg-[hsl(41_76%_51%)] text-black text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{counts.review}</span>}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="p-0 w-80 sm:w-96">
+              <PaletteContent closeBtn onClose={() => setPaletteOpen(false)} />
+            </SheetContent>
+          </Sheet>
           <Button variant="destructive" size="sm" onClick={() => setConfirmSubmit(true)} data-testid="submit-exam-btn">
-            <Send className="w-4 h-4 mr-1" /> Submit
+            <Send className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Submit</span>
           </Button>
         </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Question area */}
-        <main className="flex-1 overflow-y-auto p-8" onCopy={(e) => e.preventDefault()}>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-8 pb-20 lg:pb-8" onCopy={(e) => e.preventDefault()}>
           {q && (
             <div className="max-w-3xl">
-              <div className="overline mb-3">// Question {curr + 1} of {qs.length} · {q.subject || ""} · +{q.marks}/-{q.negative_marks}</div>
-              <h2 className="heading text-xl font-semibold leading-relaxed">{q.title}</h2>
+              <div className="overline mb-3 text-[10px] sm:text-xs">// Question {curr + 1} of {qs.length} · {q.subject || ""} · +{q.marks}/-{q.negative_marks}</div>
+              <h2 className="heading text-lg sm:text-xl font-semibold leading-relaxed">{q.title}</h2>
               {q.description && <p className="text-sm text-muted-foreground mt-2">{q.description}</p>}
 
               <div className="mt-6">
@@ -271,71 +350,28 @@ export default function ExamPortal() {
               </div>
 
               {/* Nav */}
-              <div className="flex items-center justify-between mt-8 pt-4 border-t border-border">
-                <Button variant="outline" onClick={() => setCurr(Math.max(0, curr - 1))} disabled={curr === 0} data-testid="prev-q-btn">
-                  <ChevronLeft className="w-4 h-4 mr-1" /> Previous
+              <div className="grid grid-cols-3 sm:flex sm:items-center sm:justify-between gap-2 mt-8 pt-4 border-t border-border">
+                <Button variant="outline" onClick={() => setCurr(Math.max(0, curr - 1))} disabled={curr === 0} data-testid="prev-q-btn" className="rounded-sm">
+                  <ChevronLeft className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Previous</span>
                 </Button>
                 <Button variant="outline" onClick={() => {
                   const cur = answers[q.id] || { answer: null, status: "review" };
                   setAnswerFor(q, cur.answer, "review");
                   if (curr < qs.length - 1) setCurr(curr + 1);
-                }} data-testid="mark-review-btn">
-                  <Flag className="w-4 h-4 mr-1" /> Mark for Review & Next
+                }} data-testid="mark-review-btn" className="rounded-sm">
+                  <Flag className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Mark for Review & Next</span><span className="sm:hidden text-xs">Review</span>
                 </Button>
-                <Button onClick={() => setCurr(Math.min(qs.length - 1, curr + 1))} disabled={curr >= qs.length - 1} data-testid="next-q-btn">
-                  Next <ChevronRight className="w-4 h-4 ml-1" />
+                <Button onClick={() => setCurr(Math.min(qs.length - 1, curr + 1))} disabled={curr >= qs.length - 1} data-testid="next-q-btn" className="rounded-sm">
+                  <span className="hidden sm:inline">Next</span> <ChevronRight className="w-4 h-4 sm:ml-1" />
                 </Button>
               </div>
             </div>
           )}
         </main>
 
-        {/* Right palette */}
-        <aside className="w-80 border-l border-border bg-card flex flex-col overflow-y-auto shrink-0">
-          {/* Webcam */}
-          <div className="p-4 border-b border-border">
-            <div className="overline mb-2 flex items-center gap-1"><Camera className="w-3 h-3" /> Proctoring</div>
-            <div className="aspect-video bg-foreground rounded-sm overflow-hidden">
-              <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-xs mono">
-              <div className="border border-border p-1.5 rounded-sm"><div className="overline text-[9px]">Tab switches</div><div className="font-bold mt-0.5">{attempt.tab_switches || 0}/{attempt.allowed_tab_switches}</div></div>
-              <div className="border border-border p-1.5 rounded-sm"><div className="overline text-[9px]">Violations</div><div className="font-bold mt-0.5">{(attempt.violations || []).length}</div></div>
-            </div>
-          </div>
-
-          {/* Status counts */}
-          <div className="p-4 border-b border-border">
-            <div className="overline mb-2">Status</div>
-            <div className="grid grid-cols-3 gap-1 text-[11px]">
-              <div className="palette-answered p-2 text-center rounded-sm mono font-bold">{counts.answered}</div>
-              <div className="palette-review p-2 text-center rounded-sm mono font-bold">{counts.review}</div>
-              <div className="palette-empty p-2 text-center rounded-sm mono font-bold">{counts.notVisited}</div>
-            </div>
-            <div className="grid grid-cols-3 gap-1 text-[9px] uppercase tracking-wider text-muted-foreground mt-1 text-center">
-              <span>Answered</span><span>Review</span><span>Empty</span>
-            </div>
-          </div>
-
-          {/* Palette grid */}
-          <div className="p-4 flex-1">
-            <div className="overline mb-2">Question palette</div>
-            <div className="grid grid-cols-5 gap-1.5">
-              {qs.map((qq, i) => {
-                const st = answers[qq.id]?.status;
-                let cls = "palette-empty";
-                if (i === curr) cls = "palette-current";
-                else if (st === "answered") cls = "palette-answered";
-                else if (st === "review") cls = "palette-review";
-                return (
-                  <button key={qq.id} onClick={() => setCurr(i)} data-testid={`palette-q-${i}`}
-                          className={`aspect-square text-xs font-bold border-2 rounded-sm mono ${cls}`}>
-                    {i + 1}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        {/* Right palette — desktop only */}
+        <aside className="hidden lg:flex w-80 border-l border-border bg-card flex-col overflow-y-auto shrink-0">
+          <PaletteContent />
         </aside>
       </div>
 

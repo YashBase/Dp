@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 5 — Pure UI mobile responsiveness test of Gyansai portal at 390x844 viewport, plus 1920x1080 desktop regression. All 8 review-request scenarios pass. Mobile login hides branding panel and stacks form full-width; tabs Student/Admin visible. /admin and /app mobile layouts hide their desktop sidebars (computed display: none) and show a sticky mobile header with [data-testid=mobile-menu-btn] hamburger; clicking opens a left Sheet drawer listing exactly the required 9 admin items / 5 student items + Sign Out, and clicking a nav item navigates and closes the drawer. ExamPortal mobile (created a fresh TEST_mob_* student + new attempt against seeded JEE sample exam) shows truncated exam name, Timer chip, [open-palette-btn] Grid icon, while the desktop right <aside> has computed display: none; clicking the grid icon opens a right Sheet containing webcam <video>, Tab switches/Violations counters, Status row (Answered/Review/Empty), and the full 10-tile palette grid. Bottom question nav row renders as 3-column grid showing only icons + 'Review' label on mobile, full labels on desktop. Landing / on mobile hides all 4 desktop nav anchors and the Admin button while keeping the Login button visible. Parent /r/<id> page stacks vertically with no horizontal overflow (bodyW=winW=390) and renders Result Card above Identity Verified (baseline photo present), with Snapshot carousel + Integrity Report sections all visible. Desktop 1920x1080 regression: admin aside display=flex visible, mobile header display=none, mobile-menu-btn hidden, all 6 landing nav links visible, exam portal right aside display=flex with 10 palette tiles inside it and open-palette-btn hidden, fullscreen-btn visible, nav buttons show full text labels. No regressions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviors": [
+    "/login @390 — branding panel hidden, only form visible full-width; Student & Admin tabs both visible; admin login & student (demo) login both navigate correctly to /admin and /app.",
+    "/admin @390 — <aside> computed display:none; <header class='md:hidden sticky ...'> rendered with [data-testid=mobile-menu-btn] visible; drawer lists Dashboard, Students, Question Bank, Exams, Results & Recording, Evaluation, Courses, Test Series, Settings + Sign Out; clicking [data-testid=m-nav-students] navigates to /admin/students AND closes the drawer (data-state=open dialog removed).",
+    "/app @390 — same mobile header; drawer lists Dashboard / Exams / Courses / Test Series / Profile + Sign Out; clicking [data-testid=m-snav-profile] navigates to /app/profile and closes drawer; student-logout-btn (mobile copy) works.",
+    "/exam/<attemptId> @390 — top bar: Timer chip [data-testid=exam-timer] visible, fullscreen-btn hidden (sm:inline-flex), open-palette-btn visible (lg:hidden); desktop right aside computed display:none. Opening the sheet renders a video element + 10 palette-q-* tiles + Tab switches/Violations/Status counters. Mobile webcam <video> element is visible inside the sheet and the useEffect rebind to streamRef is wired (NOTE: Playwright headless env doesn't expose a real getUserMedia fake stream so srcObject stays null and the toast 'Webcam not available — proctoring will be limited' fires — this is environmental, not a code defect; the rebind code path is correct).",
+    "/exam question-nav row @390 — buttons render in grid-cols-3, Previous & Next show icons only (innerText empty), Mark for Review shows 'Review' label.",
+    "Landing / @390 — nav-features, nav-courses, nav-series, nav-contact, nav-admin-btn all computed-hidden; nav-login-btn visible.",
+    "/r/c18eb0a0-8164-4e01-8a3b-fe977ee35df5 @390 — bodyW=390 == winW=390 (no horizontal overflow); parent-baseline-photo and parent-snapshot-current both present; Result Card stacked above Identity Verified.",
+    "DESKTOP 1920×1080 regression — /admin: aside display=flex, mobile header display=none, mobile-menu-btn hidden; / landing: all 6 nav data-testids visible; /exam/<attemptId>: right aside display=flex (contains all 10 palette tiles), open-palette-btn hidden, fullscreen-btn visible, nav buttons show full text labels ('Previous', 'Mark for Review & Next', 'Next')."
+  ],
+  "test_report_links": [
+    "/app/test_reports/iteration_5.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DUPLICATE data-testid: AdminLayout.jsx and StudentLayout.jsx both render the same signOutFooter (containing data-testid='admin-logout-btn' / 'student-logout-btn') in TWO places — inside <MobileNavBar footer={...}> AND inside the desktop <aside>. At any viewport both copies live in the DOM (only one is visible via CSS). This caused playwright .click() ambiguity (had to use locator.last). Fix: render distinct testids, e.g. 'admin-logout-btn-mobile' and 'admin-logout-btn-desktop', OR pass the rendered location as a suffix to MobileNavBar, OR wrap the duplicate copy in a container that strips testid in mobile. Same applies for the email-display element above the logout button.",
+    "MobileNavBar.jsx imports `useNavigate` but never uses it (line 2). Minor unused-import lint nit.",
+    "ExamPortal PaletteContent uses CSS uppercase text-transform on Answered/Review/Empty captions — non-blocking but slightly less friendly for screen readers; consider using uppercase text directly in JSX so semantics match presentation.",
+    "ExamPortal renders two <video> elements simultaneously (one in desktop <aside>, one in mobile <Sheet>) regardless of viewport — both are always in DOM. The rebind useEffect picks whichever is current via videoRef.current. Works, but a single conditionally-rendered video element would be cleaner and avoid the brief srcObject=null state on the inactive one.",
+    "PaletteContent button row uses inline closure `() => { setCurr(i); onClose && onClose(); }` — works, but for very large palettes consider extracting to avoid recreating handlers on every render."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only task)", "frontend": "100% (8/8 review-request scenarios)"},
+  "test_credentials": "admin@gyansai.com / admin123 ; demo / demo123 ; transient TEST_mob_<ts> student created via /api/admin/students and deleted after the test.",
+  "seed_data_creation": "Created one transient student (TEST_mob_<timestamp>) and started a new attempt against seeded exam 3844fcd3-68af-4b34-aa14-820f4453b2da. Student deleted in teardown (DELETE /api/admin/students/<id> → 200). The unsubmitted attempt is left orphaned but is harmless; if needed admin can purge.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Mobile responsiveness is fully verified. Browser automation tool DOES respect set_viewport_size({'width':390,'height':844}) — screenshots produced were truly 390-wide. Only consistent code-review concern: duplicate data-testid attributes for *-logout-btn / email display inside AdminLayout & StudentLayout (mobile drawer + desktop sidebar both render the same signOutFooter). When writing future playwright selectors for these, use page.locator(testid).last to pick the mobile (visible) copy on small viewports, or first for desktop. No functional bugs."
+}
