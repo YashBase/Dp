@@ -78,6 +78,7 @@ class QuestionIn(BaseModel):
     subject: str
     chapter: Optional[str] = ""
     topic: Optional[str] = ""
+    test_folder: Optional[str] = ""  # group questions by test name e.g. "JEE Mains 2024 Paper 1"
     difficulty: str = "medium"  # easy | medium | hard
     tags: List[str] = Field(default_factory=list)
     type: str = "mcq_single"  # mcq_single, mcq_multi, true_false, fill_blank, numerical, short, long, file
@@ -199,3 +200,22 @@ class RecordingChunkIn(BaseModel):
 class OcrRequest(BaseModel):
     image_base64: str
     mime_type: str = "image/jpeg"
+
+
+
+# ---------- Quick-Assign Exam from Question Folder ----------
+class QuickAssignExamIn(BaseModel):
+    test_folder: str  # source — pull all questions tagged with this folder
+    exam_name: str
+    exam_tag: Optional[str] = ""  # JEE Mains / JEE Advanced / MHT-CET / NEET / ...
+    class_level: Optional[str] = ""  # "", "11th", "12th"  — also used to filter target students
+    duration_minutes: int = 60
+    passing_marks: float = 0
+    allowed_tab_switches: int = 3
+    enable_webcam: bool = True
+    negative_marking: bool = True
+    randomize: bool = False
+    is_published: bool = True
+    instructions: Optional[str] = ""
+    assigned_student_ids: List[str] = Field(default_factory=list)  # if empty + class_level set, auto-pull all students of that class
+    auto_assign_class_students: bool = True

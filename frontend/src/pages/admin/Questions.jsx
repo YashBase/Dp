@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Upload, Trash2, Pencil, Camera, Loader2, Save, Sparkles } from "lucide-react";
+import { Plus, Upload, Trash2, Pencil, Camera, Loader2, Save, Sparkles, Wand2, Folder } from "lucide-react";
 
 const TYPES = [
   { v: "mcq_single", l: "MCQ — Single" },
@@ -21,8 +21,11 @@ const TYPES = [
   { v: "long", l: "Long Answer" },
 ];
 
+const TAG_PRESETS = ["JEE Mains", "JEE Advanced", "MHT-CET", "NEET"];
+
 const blankQ = () => ({
   title: "", description: "", subject: "Mathematics", chapter: "", topic: "",
+  test_folder: "",
   difficulty: "medium", tags: [], type: "mcq_single",
   options: [{ key: "A", text: "" }, { key: "B", text: "" }, { key: "C", text: "" }, { key: "D", text: "" }],
   correct_answer: "", explanation: "", marks: 4, negative_marks: 1,
@@ -30,14 +33,27 @@ const blankQ = () => ({
 
 export default function Questions() {
   const [rows, setRows] = useState([]);
-  const [filters, setFilters] = useState({ subject: "all", difficulty: "all", q: "" });
-  const [meta, setMeta] = useState({ subjects: [], chapters: [], topics: [], total: 0 });
+  const [filters, setFilters] = useState({ subject: "all", difficulty: "all", test_folder: "all", q: "" });
+  const [meta, setMeta] = useState({ subjects: [], chapters: [], topics: [], test_folders: [], total: 0 });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankQ());
   const [editingId, setEditingId] = useState(null);
   const [ocrOpen, setOcrOpen] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrResults, setOcrResults] = useState([]);
+  const [ocrFolder, setOcrFolder] = useState("");
+  const [qaOpen, setQaOpen] = useState(false);
+  const [qaLoading, setQaLoading] = useState(false);
+  const [qaForm, setQaForm] = useState({
+    test_folder: "",
+    exam_name: "",
+    exam_tag: "JEE Mains",
+    class_level: "11th",
+    duration_minutes: 60,
+    allowed_tab_switches: 3,
+    auto_assign_class_students: true,
+    is_published: true,
+  });
   const fileRef = useRef(null);
 
   const load = async () => {
@@ -87,9 +103,26 @@ export default function Questions() {
 
   const saveOcrBatch = async () => {
     if (!ocrResults.length) return;
-    await api.post("/questions/bulk-save", { questions: ocrResults });
-    toast.success(`Saved ${ocrResults.length} questions`);
-    setOcrOpen(false); setOcrResults([]); load();
+    const tagged = ocrResults.map((q) => ocrFolder ? { ...q, test_folder: ocrFolder } : q);
+    await api.post("/questions/bulk-save", { questions: tagged });
+    toast.success(`Saved ${ocrResults.length} questions${ocrFolder ? ` to folder "${ocrFolder}"` : ""}`);
+    setOcrOpen(false); setOcrResults([]); setOcrFolder(""); load();
+  };
+
+  const runQuickAssign = async () => {
+    if (!qaForm.test_folder.trim() || !qaForm.exam_name.trim()) {
+      toast.error("Pick a test folder and enter an exam name");
+      return;
+    }
+    setQaLoading(true);
+    try {
+      const { data } = await api.post("/questions/quick-assign-exam", qaForm);
+      toast.success(`Exam "${data.exam.name}" created with ${data.questions_count} questions → ${data.assigned_count} student(s) assigned`);
+      setQaOpen(false);
+      setQaForm({ ...qaForm, exam_name: "" });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Quick assign failed");
+    } finally { setQaLoading(false); }
   };
 
   return (
@@ -100,7 +133,78 @@ export default function Questions() {
           <h1 className="heading text-3xl font-bold mt-1">Question Bank</h1>
           <p className="text-sm text-muted-foreground mt-1 mono">{meta.total} questions stored permanently</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Dialog open={qaOpen} onOpenChange={setQaOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="quick-assign-btn"><Wand2 className="w-4 h-4 mr-1" /> Quick Assign to Exam</Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-sm max-w-xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2"><Wand2 className="w-4 h-4 text-primary" /> Folder → Class → Exam Wizard</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">Pick a question folder, target class &amp; exam name. We&apos;ll create the exam with all questions in that folder and auto-assign it to every active student of that class.</p>
+              <div className="space-y-3">
+                <div>
+                  <Label>Test Folder (source questions) *</Label>
+                  <Select value={qaForm.test_folder || ""} onValueChange={(v) => setQaForm({ ...qaForm, test_folder: v })}>
+                    <SelectTrigger className="rounded-sm" data-testid="qa-folder"><SelectValue placeholder="Choose folder…" /></SelectTrigger>
+                    <SelectContent>
+                      {(meta.test_folders || []).length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">No folders yet — tag questions with a Test Folder first.</div>}
+                      {(meta.test_folders || []).map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Exam name *</Label>
+                  <Input value={qaForm.exam_name} onChange={(e) => setQaForm({ ...qaForm, exam_name: e.target.value })} placeholder="e.g. JEE Mains Mock — 12th Std" className="rounded-sm" data-testid="qa-exam-name" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Target Class</Label>
+                    <Select value={qaForm.class_level} onValueChange={(v) => setQaForm({ ...qaForm, class_level: v })}>
+                      <SelectTrigger className="rounded-sm" data-testid="qa-class"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="11th">11th Standard</SelectItem>
+                        <SelectItem value="12th">12th Standard</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Exam Tag (folder)</Label>
+                    <Select value={qaForm.exam_tag} onValueChange={(v) => setQaForm({ ...qaForm, exam_tag: v })}>
+                      <SelectTrigger className="rounded-sm" data-testid="qa-tag"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {TAG_PRESETS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Duration (min)</Label>
+                    <Input type="number" value={qaForm.duration_minutes} onChange={(e) => setQaForm({ ...qaForm, duration_minutes: Number(e.target.value) })} className="rounded-sm mono" data-testid="qa-duration" />
+                  </div>
+                  <div>
+                    <Label>Tab switches allowed</Label>
+                    <Input type="number" value={qaForm.allowed_tab_switches} onChange={(e) => setQaForm({ ...qaForm, allowed_tab_switches: Number(e.target.value) })} className="rounded-sm mono" />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={qaForm.auto_assign_class_students} onChange={(e) => setQaForm({ ...qaForm, auto_assign_class_students: e.target.checked })} data-testid="qa-auto-assign" />
+                  Auto-assign to all active students of <span className="mono font-bold">{qaForm.class_level}</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={qaForm.is_published} onChange={(e) => setQaForm({ ...qaForm, is_published: e.target.checked })} />
+                  Publish immediately
+                </label>
+              </div>
+              <DialogFooter>
+                <Button onClick={runQuickAssign} disabled={qaLoading} data-testid="qa-submit">
+                  {qaLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
+                  Create Exam & Assign
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={ocrOpen} onOpenChange={setOcrOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" data-testid="ocr-upload-btn"><Camera className="w-4 h-4 mr-1" /> Photo/PDF Import</Button>
@@ -119,6 +223,21 @@ export default function Questions() {
               </div>
               {ocrResults.length > 0 && (
                 <div className="space-y-3 mt-4">
+                  <div className="flex items-center gap-2 flex-wrap border border-border rounded-sm p-3 bg-muted/30">
+                    <Folder className="w-4 h-4 text-primary" />
+                    <Label className="text-xs">Assign all to Test Folder (optional)</Label>
+                    <Input
+                      value={ocrFolder}
+                      onChange={(e) => setOcrFolder(e.target.value)}
+                      placeholder="e.g. JEE Mains 2024 Paper 1"
+                      className="rounded-sm flex-1 min-w-[180px]"
+                      list="ocr-folder-options"
+                      data-testid="ocr-folder-input"
+                    />
+                    <datalist id="ocr-folder-options">
+                      {(meta.test_folders || []).map((f) => <option key={f} value={f} />)}
+                    </datalist>
+                  </div>
                   <div className="text-sm font-medium">Extracted {ocrResults.length} question(s) — edit before saving:</div>
                   {ocrResults.map((q, i) => (
                     <div key={i} className="grid-card p-4">
@@ -204,6 +323,13 @@ export default function Questions() {
                     <div><Label>Negative</Label><Input type="number" value={form.negative_marks} onChange={(e) => setForm({ ...form, negative_marks: Number(e.target.value) })} /></div>
                   </div>
                   <div>
+                    <Label className="flex items-center gap-1.5"><Folder className="w-3 h-3" /> Test Folder <span className="text-xs text-muted-foreground">(group by test name — used for Quick Assign)</span></Label>
+                    <Input value={form.test_folder || ""} onChange={(e) => setForm({ ...form, test_folder: e.target.value })} placeholder="e.g. JEE Mains 2024 Paper 1" className="rounded-sm" list="folder-options" data-testid="q-test-folder" />
+                    <datalist id="folder-options">
+                      {(meta.test_folders || []).map((f) => <option key={f} value={f} />)}
+                    </datalist>
+                  </div>
+                  <div>
                     <Label>Tags (comma-separated)</Label>
                     <Input value={(form.tags || []).join(",")} onChange={(e) => setForm({ ...form, tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
                   </div>
@@ -238,6 +364,15 @@ export default function Questions() {
             </SelectContent>
           </Select>
         </div>
+        <div><Label className="text-xs flex items-center gap-1"><Folder className="w-3 h-3" />Test Folder</Label>
+          <Select value={filters.test_folder} onValueChange={(v) => setFilters({ ...filters, test_folder: v })}>
+            <SelectTrigger className="w-52 rounded-sm" data-testid="filter-folder"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All folders</SelectItem>
+              {(meta.test_folders || []).map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex-1 max-w-md">
           <Label className="text-xs">Search</Label>
           <Input value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search text…" className="rounded-sm" data-testid="q-search" />
@@ -253,6 +388,7 @@ export default function Questions() {
               <div className="flex-1 min-w-0">
                 <div className="flex gap-2 mb-2 flex-wrap">
                   <Badge variant="outline" className="rounded-sm">{q.subject}</Badge>
+                  {q.test_folder && <Badge className="rounded-sm mono" data-testid={`q-folder-${q.id}`}>📁 {q.test_folder}</Badge>}
                   {q.chapter && <Badge variant="outline" className="rounded-sm">{q.chapter}</Badge>}
                   <Badge variant="outline" className="rounded-sm">{q.difficulty}</Badge>
                   <Badge className="rounded-sm">{q.type}</Badge>

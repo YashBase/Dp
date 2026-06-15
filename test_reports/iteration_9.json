@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 9 — Verified Test Folder field + Quick-Assign Exam wizard end-to-end. 8/8 new backend pytests pass on /app/backend/tests/test_iter9_quick_assign.py (admin login, question test_folder persistence, /api/questions?test_folder filter, /api/questions/meta.test_folders distinct array, POST /api/questions/quick-assign-exam happy path + 400 edge cases for empty folder/name + 404 when folder is empty, demo student of class 12th sees auto-assigned exam, freshly created 11th-student does NOT see the 12th-only auto-assigned exam). Frontend UI: all required data-testid selectors present on /admin/questions — quick-assign-btn opens Folder→Class→Exam Wizard dialog with all qa-* fields (qa-folder, qa-exam-name, qa-class, qa-tag, qa-duration, qa-auto-assign, qa-submit), filter-folder Select + Apply filters server-side, '📁 JEE Mains 2024 P1' badges (data-testid='q-folder-<id>') render on filtered rows, Add Question → Metadata tab has q-test-folder Input wired to folder-options datalist. OCR ocr-folder-input renders conditionally AFTER a file is uploaded and questions are extracted (sits next to bulk-save form) — by-design and matches the review-request wording 'when filled before Save'. Iter8 regression suite still passes; 2 prior iter7 failures pre-existed (seed exam 'NEET Mock 1' was deleted in earlier iterations — unrelated to iter9 changes). Test artifacts (TEST_iter9_* questions, exam, 11th student) auto-cleaned in pytest teardown.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviors": [
+    "Admin login admin@gyansai.com/admin123 → /admin reaches dashboard.",
+    "POST /api/questions with test_folder='TEST_iter9_*' persists; GET /api/questions?test_folder=… returns only those rows; GET /api/questions/meta returns distinct test_folders array (excludes empty strings).",
+    "POST /api/questions/quick-assign-exam happy path returns {exam, questions_count=3, assigned_count≥1}; exam has question_ids=all from folder, class_level/exam_tag/is_published set as requested, test_folder_source field populated.",
+    "Edge case: empty test_folder → 400; empty exam_name → 400; folder with no questions → 404 'No questions found in folder ...'",
+    "Demo student (class_level=12th) sees the new exam via GET /api/exams.",
+    "Newly-created TEST 11th student does NOT see the 12th-only exam via GET /api/exams — class-level visibility filter works correctly.",
+    "UI: /admin/questions header buttons present (Quick Assign to Exam → quick-assign-btn, Photo/PDF Import → ocr-upload-btn, Add Question).",
+    "UI: Test Folder Select (filter-folder) at toolbar; selecting 'JEE Mains 2024 P1' + Apply filters the list to just the 3 folder-tagged rows; each row shows a '📁 JEE Mains 2024 P1' badge (data-testid='q-folder-<id>').",
+    "UI: Quick-Assign dialog has all 7 qa-* fields (qa-folder, qa-exam-name, qa-class, qa-tag, qa-duration, qa-auto-assign checkbox, qa-submit).",
+    "UI: Add Question dialog → Metadata tab → 'Test Folder' Input (q-test-folder) with list='folder-options' datalist binding existing folders.",
+    "UI: OCR dialog (AI Question Extractor) renders ocr-folder-input only after ocrResults populates — matches spec ('when filled before Save')."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_quick_assign.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_questions.py:258 uses db.questions.distinct('id', {'test_folder': ...}). This returns IDs but order is not guaranteed; if randomize=False the exam may not preserve insertion order. Minor — order-sensitive consumers should sort by created_at instead.",
+    "QuickAssignExamIn defaults `auto_assign_class_students=True` AND uses class_level only when present. If class_level is empty and assigned_student_ids is empty, no students are pulled and assigned_count=0 — exam is still created. Could add a warning in response but functionally correct.",
+    "Questions.jsx file is 419 lines — getting close to the 700-line threshold; consider splitting QuickAssign dialog and OCR dialog into separate components for maintainability.",
+    "Iter7 regression failures (NEET Mock 1 missing) indicate seed data is being mutated across iterations. Recommend making seeded exams idempotent (re-create if missing on startup) to keep regression suite stable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_quick_assign.py"
+  ],
+  "success_rate": {"backend": "100% (8/8 iter9 pytests)", "frontend": "100% (all required testids present and functional)"},
+  "test_credentials": "Admin admin@gyansai.com/admin123, Student demo/demo123 (class=12th). Created+deleted TEST_iter9_s11_* (11th) for class-filter validation.",
+  "seed_data_creation": "Tests create 3 questions in TEST_iter9_<ts> folder + 1 exam + 1 student — all auto-deleted in pytest module teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter9 tests at /app/backend/tests/test_iter9_quick_assign.py validate: question test_folder field, /api/questions/meta.test_folders, POST /api/questions/quick-assign-exam. Run with REACT_APP_BACKEND_URL env var if pytest fixture errors. Demo student is class_level='12th'; create a TEST 11th student to validate class-filter exclusions. Prior sanity data 'JEE Mains 2024 P1' folder with 3 questions and exam 'JEE Mains Auto Mock - 12th' assigned to demo still exists from main-agent sanity curl — leaving them in place. Iter7 'NEET Mock 1' regression failures are pre-existing seed drift, not caused by iter9."
+}
