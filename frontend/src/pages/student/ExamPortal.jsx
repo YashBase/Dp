@@ -28,12 +28,16 @@ export default function ExamPortal() {
   const [proctorError, setProctorError] = useState("");
   const [requestingMedia, setRequestingMedia] = useState(false);
 
-  const videoRef = useRef(null);
+  const videoRef = useRef(null);          // main preview (palette)
+  const miniVideoRef = useRef(null);      // floating always-on preview
   const streamRef = useRef(null);
   const snapTimerRef = useRef(null);
   const recorderRef = useRef(null);
   const recordingActiveRef = useRef(false);
   const chunkIndexRef = useRef(0);
+  const watchdogRef = useRef(null);
+  const [recState, setRecState] = useState("idle"); // idle | recording | uploading | error
+  const [chunksSent, setChunksSent] = useState(0);
 
   // Load attempt
   useEffect(() => {
@@ -140,6 +144,21 @@ export default function ExamPortal() {
       snapTimerRef.current = setInterval(() => captureSnapshot(), 30000);
       recordingActiveRef.current = true;
       startRecorderCycle();
+      // Watchdog: every 5s, if recording is supposed to be active but recorder is dead, restart it.
+      watchdogRef.current = setInterval(() => {
+        if (!recordingActiveRef.current) return;
+        const live = streamRef.current?.getTracks().some((t) => t.readyState === "live");
+        if (!live) {
+          setRecState("error");
+          return;
+        }
+        const st = recorderRef.current?.state;
+        if (st !== "recording") {
+          // restart the chunk cycle
+          try { recorderRef.current?.stop(); } catch (_) {}
+          startRecorderCycle();
+        }
+      }, 5000);
       setProctorReady(true);
       toast.success("Camera & mic active — exam starting now.");
     } catch (e) {
@@ -161,6 +180,7 @@ export default function ExamPortal() {
     if (!attempt) return;
     return () => {
       if (snapTimerRef.current) clearInterval(snapTimerRef.current);
+      if (watchdogRef.current) clearInterval(watchdogRef.current);
       recordingActiveRef.current = false;
       try { recorderRef.current?.stop(); } catch (_) {}
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -182,17 +202,23 @@ export default function ExamPortal() {
 
   const startRecorderCycle = () => {
     if (!streamRef.current || !recordingActiveRef.current) return;
+    // Don't start if stream tracks are dead
+    const live = streamRef.current.getTracks().some((t) => t.readyState === "live");
+    if (!live) { setRecState("error"); return; }
     let rec;
     try {
       const opts = pickMime() ? { mimeType: pickMime(), videoBitsPerSecond: 200_000, audioBitsPerSecond: 64_000 } : {};
       rec = new MediaRecorder(streamRef.current, opts);
     } catch (e) {
       console.warn("MediaRecorder unavailable", e);
+      setRecState("error");
       return;
     }
     recorderRef.current = rec;
     const chunks = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    rec.onstart = () => setRecState("recording");
+    rec.onerror = () => setRecState("error");
     rec.onstop = async () => {
       if (chunks.length === 0) {
         if (recordingActiveRef.current) startRecorderCycle();
@@ -200,6 +226,7 @@ export default function ExamPortal() {
       }
       const blob = new Blob(chunks, { type: rec.mimeType || "video/webm" });
       if (blob.size > 0 && blob.size < 5 * 1024 * 1024) {
+        setRecState("uploading");
         const reader = new FileReader();
         reader.onload = () => {
           const b64 = String(reader.result || "").split(",")[1] || "";
@@ -211,26 +238,29 @@ export default function ExamPortal() {
               mime_type: blob.type || "video/webm",
               duration_ms: 30000,
               chunk_index: idx,
-            }).catch(() => {});
+            }).then(() => setChunksSent((n) => n + 1)).catch(() => {});
           }
         };
         reader.readAsDataURL(blob);
       }
       if (recordingActiveRef.current) startRecorderCycle();
     };
-    try { rec.start(); } catch (_) { return; }
+    try { rec.start(); } catch (_) { setRecState("error"); return; }
     setTimeout(() => { try { rec.state === "recording" && rec.stop(); } catch (_) {} }, 30000);
   };
 
-  // Re-bind webcam stream to the live <video> element whenever it remounts
-  // (e.g. when the mobile palette sheet opens/closes).
+  // Re-bind webcam stream to both <video> elements whenever they remount
+  // (palette sheet open/close, layout changes, mini-cam mount).
   useEffect(() => {
-    const v = videoRef.current;
-    if (v && streamRef.current && v.srcObject !== streamRef.current) {
-      v.srcObject = streamRef.current;
-      v.play().catch(() => {});
-    }
-  }, [paletteOpen, attempt]);
+    const bind = (v) => {
+      if (v && streamRef.current && v.srcObject !== streamRef.current) {
+        v.srcObject = streamRef.current;
+        v.play().catch(() => {});
+      }
+    };
+    bind(videoRef.current);
+    bind(miniVideoRef.current);
+  }, [paletteOpen, attempt, proctorReady, curr]);
 
   const captureSnapshot = async (violation = null) => {
     if (!videoRef.current || !streamRef.current) return;
@@ -391,6 +421,21 @@ export default function ExamPortal() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      {/* Floating always-on camera + REC indicator (proctor surveillance) */}
+      <div
+        className="fixed bottom-4 right-4 z-50 w-28 sm:w-36 grid-card overflow-hidden shadow-lg border-2 border-primary pointer-events-none select-none"
+        data-testid="proctor-mini-cam"
+      >
+        <div className="aspect-video bg-foreground relative">
+          <video ref={miniVideoRef} muted playsInline className="w-full h-full object-cover" />
+          <div className="absolute top-1 left-1 flex items-center gap-1 bg-black/60 text-white text-[9px] mono px-1.5 py-0.5 rounded-sm" data-testid="proctor-rec-indicator">
+            <span className={`w-2 h-2 rounded-full ${recState === "recording" ? "bg-red-500 animate-pulse" : recState === "uploading" ? "bg-yellow-400 animate-pulse" : recState === "error" ? "bg-orange-500" : "bg-gray-400"}`}></span>
+            <span className="uppercase">{recState === "recording" ? "REC" : recState === "uploading" ? "SAVE" : recState === "error" ? "ERR" : "…"}</span>
+          </div>
+          <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] mono px-1.5 py-0.5 rounded-sm" data-testid="proctor-chunks-sent">{chunksSent} clip{chunksSent === 1 ? "" : "s"}</div>
+        </div>
+      </div>
+
       {/* Top bar */}
       <header className="border-b border-border bg-card px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 shrink-0">
         <div className="min-w-0 flex-1">
