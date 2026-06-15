@@ -1,0 +1,44 @@
+{
+  "summary": "Iter10 — Exam Folder Manager end-to-end (Create Exam Folder dialog inside /admin/questions). 11/11 backend pytests pass on /app/backend/tests/test_iter10_folder_exam.py (folder-exam create returns action:'created' + tags questions + assigns demo; GET /api/questions?test_folder filters tagged Qs; GET /api/questions/folders surfaces the folder with exam_id/class_level/exam_tag/assigned_count/is_published; demo student of class 12th sees the exam via /api/exams; update returns same exam_id + action:'updated' and pulls exam_id from removed students.exam_ids; auto_assign_class_students=true with class_level=12th re-pulls demo; empty folder_name/exam_name → 400; DELETE /api/questions/folders/{name} drops test_folder from questions AND deletes linked exam (verified via /api/exams/{id} → 404)). Regression: legacy POST /api/questions/quick-assign-exam still works; /api/questions/meta still returns subjects/chapters/topics/test_folders/total. Frontend UI: all required data-testid selectors present on /admin/questions — create-folder-btn opens ExamFolderDialog with 3 tabs (ef-tab-info/questions/students); Info tab has ef-folder-name, ef-exam-name, ef-class, ef-duration, ef-publish, plus 4 tag-preset chips (ef-tag-JEE-Mains, ef-tag-JEE-Advanced, ef-tag-MHT-CET, ef-tag-NEET); Questions tab has ef-q-search, ef-q-select-all (20 question rows loaded), ef-tag-questions checkbox (default TRUE); Students tab has ef-auto-assign, ef-student-search, ef-student-select-all and filters list by Info-tab class_level. Save (ef-save) creates the folder, reload shows folder-card-<name> with folder-edit-<name> and folder-del-<name>; Edit re-opens dialog with folder_name input disabled+pre-filled and exam_name pre-filled; Delete triggers toast 'Folder removed · 1 exam(s) deleted'. quick-assign-btn still present (backwards-compat). Test artifacts auto-cleaned in pytest teardown.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviors": [
+    "POST /api/questions/folder-exam without exam_id → action='created', returns exam.id, questions_count, assigned_count.",
+    "tag_questions_to_folder=true sets test_folder on every picked question; GET /api/questions?test_folder=<fname> returns them.",
+    "GET /api/questions/folders includes new folder with question_count, exam_id, class_level, exam_tag, duration_minutes, assigned_count, is_published.",
+    "Demo student (12th) sees the assigned exam via GET /api/exams.",
+    "POST with exam_id → action='updated', same exam.id; removed students get exam_id $pull-ed from exam_ids.",
+    "auto_assign_class_students=true + class_level='12th' pulls demo back into assigned_count.",
+    "Edge: folder_name='   ' → 400; exam_name='' → 400.",
+    "DELETE /api/questions/folders/<name> returns {ok:true, exams_deleted:N}, drops test_folder from Qs, deletes linked exam (verified via /api/exams/{id} → 404), preserves the question rows themselves.",
+    "Legacy POST /api/questions/quick-assign-exam regression: still works (creates exam from folder).",
+    "UI: create-folder-btn + 3 tabs + all required ef-* selectors render; saving creates a folder card; Edit pre-fills folder_name disabled; Delete cascades and toast confirms."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_folder_exam.py",
+    "/app/test_reports/pytest/iter10_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ExamFolderDialog.submit() validates folder_name + exam_name + question_ids but NOT students (no toast.error when assigned_student_ids=[] AND auto_assign_class_students=false OR class_level=''). Spec says 'at least one student' is required for save success. Currently the backend happily creates an exam with assigned_count=0. Minor — add a client-side guard or backend 400.",
+    "Frontend GET /api/exams for students surfaces exams BOTH via assigned_student_ids AND class_level filter. After admin removes a student from the assigned list, the student may still see the exam if it matches their class. This is by design but may surprise users. Document or add an opt-out.",
+    "routes_questions.py upsert_folder_exam line 414 — when exam_id provided but no longer in target_list, $pull works correctly. However update_one (line 409) preserves created_at if previously set, which is good; but `id` field is not in exam_doc_base, so the field stays untouched (good). LGTM.",
+    "Questions.jsx is now 522 lines — nearing maintainability threshold. Consider extracting OCR dialog and Quick-Assign dialog into separate files now that ExamFolderDialog is already extracted.",
+    "routes_questions.py DELETE /folders/{folder_name} uses path encoded folder name; FastAPI auto-decodes but folder names with '/' would still break path parsing. Edge case — disallow '/' in folder_name on creation.",
+    "FolderExamIn.tag_questions_to_folder default True is convenient but means any picked question loses its previous test_folder. Consider warning the admin in the UI if a question already has a different test_folder."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter10_folder_exam.py"
+  ],
+  "success_rate": {"backend": "100% (11/11 iter10 pytests)", "frontend": "100% (all 22 required testids present and end-to-end create→edit→delete flow verified)"},
+  "test_credentials": "Admin admin@gyansai.com/admin123, Student demo/demo123 (class=12th). Read from /app/memory/test_credentials.md.",
+  "seed_data_creation": "Pytest module created 3 TEST_iter10 questions + 1 exam in TEST_iter10_folder_<ts>; all cleaned in teardown (DELETE /folders/<name> + DELETE /questions/<id>). UI test created+deleted TEST_iter10_ui_<ts> folder in the same run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter10 tests at /app/backend/tests/test_iter10_folder_exam.py validate the new unified Exam-Folder Manager (POST /api/questions/folder-exam create+update, DELETE /api/questions/folders/{name}). Important: /api/exams for students surfaces exams via BOTH explicit assigned_student_ids AND class_level filter — so removing a student from assigned_ids doesn't necessarily hide the exam (use admin GET /admin/students[*].exam_ids to verify pull operations). Pre-existing legacy folders ('MHT-CET 11th' empty folder + 'JEE Mains 2024 P1') still surface from exams.test_folder_source. UI default class_level='11th' on new form means Students tab may show 0 rows if no 11th students exist — switch to 'Any' to see all.",
+  "rca of the issue": "N/A — no failing tests."
+}

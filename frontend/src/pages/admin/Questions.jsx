@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Upload, Trash2, Pencil, Camera, Loader2, Save, Sparkles, Wand2, Folder } from "lucide-react";
+import { Plus, Upload, Trash2, Pencil, Camera, Loader2, Save, Sparkles, Wand2, Folder, FolderPlus } from "lucide-react";
+import ExamFolderDialog from "@/components/ExamFolderDialog";
 
 const TYPES = [
   { v: "mcq_single", l: "MCQ — Single" },
@@ -55,6 +56,14 @@ export default function Questions() {
     is_published: true,
   });
   const fileRef = useRef(null);
+  const [folders, setFolders] = useState([]);
+  const [efOpen, setEfOpen] = useState(false);
+  const [efInitial, setEfInitial] = useState(null);
+
+  const loadFolders = async () => {
+    try { const { data } = await api.get("/questions/folders"); setFolders(data); }
+    catch (e) { /* non-fatal */ }
+  };
 
   const load = async () => {
     const params = {};
@@ -63,9 +72,53 @@ export default function Questions() {
     setRows(data);
     const m = await api.get("/questions/meta");
     setMeta(m.data);
+    loadFolders();
   };
 
   useEffect(() => { load(); }, []);
+
+  const openFolderEdit = async (f) => {
+    // Need to fetch the exam to pre-fill assigned_student_ids + question_ids
+    if (!f.exam_id) {
+      setEfInitial({ folder_name: f.folder_name });
+      setEfOpen(true);
+      return;
+    }
+    try {
+      const { data: exam } = await api.get(`/exams/${f.exam_id}`);
+      setEfInitial({
+        folder_name: f.folder_name,
+        exam_id: exam.id,
+        exam_name: exam.name,
+        exam_tag: exam.exam_tag || "JEE Mains",
+        class_level: exam.class_level || "",
+        duration_minutes: exam.duration_minutes,
+        passing_marks: exam.passing_marks || 0,
+        allowed_tab_switches: exam.allowed_tab_switches ?? 3,
+        enable_webcam: exam.enable_webcam !== false,
+        negative_marking: exam.negative_marking !== false,
+        randomize: !!exam.randomize,
+        is_published: !!exam.is_published,
+        instructions: exam.instructions || "",
+        question_ids: exam.question_ids || [],
+        assigned_student_ids: exam.assigned_student_ids || [],
+        auto_assign_class_students: false,
+        tag_questions_to_folder: true,
+      });
+      setEfOpen(true);
+    } catch (e) {
+      toast.error("Couldn't load exam folder");
+    }
+  };
+
+  const delFolder = async (fname) => {
+    if (!window.confirm(`Delete folder "${fname}"? This removes the folder tag from its questions and deletes the linked exam (questions themselves are preserved).`)) return;
+    try {
+      const { data } = await api.delete(`/questions/folders/${encodeURIComponent(fname)}`);
+      toast.success(`Folder removed${data.exams_deleted ? ` · ${data.exams_deleted} exam(s) deleted` : ""}`);
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
+  };
 
   const submit = async () => {
     try {
@@ -134,9 +187,12 @@ export default function Questions() {
           <p className="text-sm text-muted-foreground mt-1 mono">{meta.total} questions stored permanently</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="default" onClick={() => { setEfInitial(null); setEfOpen(true); }} data-testid="create-folder-btn">
+            <FolderPlus className="w-4 h-4 mr-1" /> Create Exam Folder
+          </Button>
           <Dialog open={qaOpen} onOpenChange={setQaOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" data-testid="quick-assign-btn"><Wand2 className="w-4 h-4 mr-1" /> Quick Assign to Exam</Button>
+              <Button variant="outline" data-testid="quick-assign-btn"><Wand2 className="w-4 h-4 mr-1" /> Quick Assign</Button>
             </DialogTrigger>
             <DialogContent className="rounded-sm max-w-xl">
               <DialogHeader>
@@ -343,6 +399,47 @@ export default function Questions() {
         </div>
       </header>
 
+      {/* Exam Folders Grid */}
+      {folders.length > 0 && (
+        <section data-testid="exam-folders-section">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="overline flex items-center gap-1.5"><Folder className="w-3 h-3" /> Exam Folders</div>
+            <Badge variant="outline" className="rounded-sm mono">{folders.length}</Badge>
+            <div className="flex-1 border-t border-border" />
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {folders.map((f) => (
+              <div key={f.folder_name} className="grid-card p-4 brutalist-hover" data-testid={`folder-card-${f.folder_name}`}>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {f.exam_id ? (
+                    <Badge variant={f.is_published ? "default" : "secondary"} className="rounded-sm text-[10px]">{f.is_published ? "LIVE" : "DRAFT"}</Badge>
+                  ) : (
+                    <Badge variant="outline" className="rounded-sm text-[10px]">QUESTIONS ONLY</Badge>
+                  )}
+                  {f.class_level && <Badge variant="outline" className="rounded-sm mono text-[10px]">{f.class_level}</Badge>}
+                  {f.exam_tag && <Badge variant="outline" className="rounded-sm mono text-[10px]">{f.exam_tag}</Badge>}
+                </div>
+                <h3 className="heading text-base font-semibold mt-2 flex items-center gap-1.5">
+                  <Folder className="w-3.5 h-3.5 text-primary" /> {f.folder_name}
+                </h3>
+                {f.exam_name && <p className="text-xs text-muted-foreground mt-0.5 mono truncate">{f.exam_name}</p>}
+                <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+                  <div><div className="overline text-[9px]">Questions</div><div className="mono mt-0.5 font-bold">{f.question_count}</div></div>
+                  <div><div className="overline text-[9px]">Students</div><div className="mono mt-0.5 font-bold">{f.assigned_count ?? "—"}</div></div>
+                  <div><div className="overline text-[9px]">Duration</div><div className="mono mt-0.5 font-bold">{f.duration_minutes ? `${f.duration_minutes}m` : "—"}</div></div>
+                </div>
+                <div className="flex gap-1 mt-3">
+                  <Button size="sm" variant="outline" className="flex-1 rounded-sm" onClick={() => openFolderEdit(f)} data-testid={`folder-edit-${f.folder_name}`}>
+                    <Pencil className="w-3 h-3 mr-1" /> {f.exam_id ? "Edit" : "Make Exam"}
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => delFolder(f.folder_name)} data-testid={`folder-del-${f.folder_name}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="flex flex-wrap items-end gap-2">
         <div><Label className="text-xs">Subject</Label>
           <Select value={filters.subject} onValueChange={(v) => setFilters({ ...filters, subject: v })}>
@@ -413,6 +510,13 @@ export default function Questions() {
           </div>
         ))}
       </div>
+
+      <ExamFolderDialog
+        open={efOpen}
+        onOpenChange={setEfOpen}
+        initial={efInitial}
+        onSaved={() => load()}
+      />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import re
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from core import db, require_admin, new_id, now_utc, iso, EMERGENT_LLM_KEY
-from models import QuestionIn, OcrRequest, QuickAssignExamIn
+from models import QuestionIn, OcrRequest, QuickAssignExamIn, FolderExamIn
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -315,3 +315,156 @@ async def quick_assign_exam(payload: QuickAssignExamIn, _admin=Depends(require_a
         "questions_count": len(qids),
         "assigned_count": len(student_ids),
     }
+
+
+# ---------- Exam-Folder Manager ----------
+@router.get("/folders")
+async def list_folders(_admin=Depends(require_admin)):
+    """List every distinct question test_folder and merge in the linked exam (if any).
+    Returns: [{folder_name, question_count, exam_id?, exam_name?, class_level?, exam_tag?,
+               assigned_count?, is_published?, duration_minutes?}]"""
+    folder_names = [f for f in await db.questions.distinct("test_folder") if f]
+    # Also include folders from exams that have test_folder_source but no remaining questions
+    exam_folder_sources = [
+        f for f in await db.exams.distinct("test_folder_source") if f and f not in folder_names
+    ]
+    folder_names = sorted(set([*folder_names, *exam_folder_sources]))
+
+    out = []
+    for fname in folder_names:
+        qcount = await db.questions.count_documents({"test_folder": fname})
+        exam = await db.exams.find_one(
+            {"test_folder_source": fname}, {"_id": 0}, sort=[("created_at", -1)]
+        )
+        row = {"folder_name": fname, "question_count": qcount}
+        if exam:
+            row.update({
+                "exam_id": exam["id"],
+                "exam_name": exam.get("name"),
+                "class_level": exam.get("class_level", ""),
+                "exam_tag": exam.get("exam_tag", ""),
+                "duration_minutes": exam.get("duration_minutes"),
+                "assigned_count": len(exam.get("assigned_student_ids") or []),
+                "is_published": bool(exam.get("is_published")),
+            })
+        out.append(row)
+    return out
+
+
+@router.post("/folder-exam")
+async def upsert_folder_exam(payload: FolderExamIn, _admin=Depends(require_admin)):
+    """Create or update the exam associated with a question-bank folder.
+    Steps:
+      1. (optional) Tag each picked question with test_folder=folder_name.
+      2. Resolve target students (manual list + optional auto-by-class).
+      3. Upsert the exam (insert if exam_id is None/empty, else update).
+      4. Push the exam id into each target student's exam_ids array.
+    """
+    fname = (payload.folder_name or "").strip()
+    if not fname:
+        raise HTTPException(status_code=400, detail="folder_name is required")
+    if not (payload.exam_name or "").strip():
+        raise HTTPException(status_code=400, detail="exam_name is required")
+
+    # 1. Tag picked questions with this folder so they appear under it
+    if payload.tag_questions_to_folder and payload.question_ids:
+        await db.questions.update_many(
+            {"id": {"$in": payload.question_ids}},
+            {"$set": {"test_folder": fname}},
+        )
+
+    # 2. Resolve target students (manual + auto by class)
+    target_ids = set(payload.assigned_student_ids or [])
+    if payload.auto_assign_class_students and payload.class_level:
+        class_match = await db.students.distinct("id", {
+            "class_level": payload.class_level,
+            "status": {"$ne": "suspended"},
+        })
+        target_ids.update(class_match)
+    target_list = list(target_ids)
+
+    # 3. Upsert exam
+    exam_doc_base = {
+        "name": payload.exam_name.strip(),
+        "description": f"Exam folder: {fname} ({len(payload.question_ids)} questions)",
+        "type": "mock",
+        "exam_tag": payload.exam_tag or "",
+        "class_level": payload.class_level or "",
+        "duration_minutes": payload.duration_minutes,
+        "passing_marks": payload.passing_marks,
+        "instructions": payload.instructions or "Read each question carefully.",
+        "randomize": payload.randomize,
+        "negative_marking": payload.negative_marking,
+        "question_ids": payload.question_ids,
+        "assigned_student_ids": target_list,
+        "allowed_tab_switches": payload.allowed_tab_switches,
+        "enable_webcam": payload.enable_webcam,
+        "is_published": payload.is_published,
+        "price": 0.0,
+        "test_folder_source": fname,
+    }
+
+    if payload.exam_id:
+        # Update existing
+        res = await db.exams.update_one({"id": payload.exam_id}, {"$set": exam_doc_base})
+        if res.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Exam not found")
+        exam = await db.exams.find_one({"id": payload.exam_id}, {"_id": 0})
+        # Remove exam_id from students no longer in assignment list
+        await db.students.update_many(
+            {"exam_ids": payload.exam_id, "id": {"$nin": target_list}},
+            {"$pull": {"exam_ids": payload.exam_id}},
+        )
+        action = "updated"
+    else:
+        exam_doc_base["id"] = new_id()
+        exam_doc_base["created_at"] = iso(now_utc())
+        await db.exams.insert_one(exam_doc_base)
+        exam = exam_doc_base
+        exam.pop("_id", None)
+        action = "created"
+
+    # 4. Push exam id into each target student's exam_ids
+    if target_list:
+        await db.students.update_many(
+            {"id": {"$in": target_list}},
+            {"$addToSet": {"exam_ids": exam["id"]}},
+        )
+
+    # 5. Activity log
+    await db.activities.insert_one({
+        "id": new_id(),
+        "type": f"folder_exam_{action}",
+        "text": f"Exam folder '{fname}' {action} → '{exam['name']}' · {len(payload.question_ids)} questions · {len(target_list)} students",
+        "created_at": iso(now_utc()),
+    })
+
+    return {
+        "exam": exam,
+        "questions_count": len(payload.question_ids),
+        "assigned_count": len(target_list),
+        "action": action,
+    }
+
+
+@router.delete("/folders/{folder_name}")
+async def delete_folder(folder_name: str, _admin=Depends(require_admin)):
+    """Remove the test_folder tag from all questions in this folder AND delete the linked exam if any.
+    Questions themselves are preserved (only the folder grouping is dropped)."""
+    fname = folder_name.strip()
+    if not fname:
+        raise HTTPException(status_code=400, detail="folder_name is required")
+    # Drop folder tag from questions
+    await db.questions.update_many({"test_folder": fname}, {"$set": {"test_folder": ""}})
+    # Delete linked exam(s)
+    exams = await db.exams.find({"test_folder_source": fname}, {"_id": 0, "id": 1}).to_list(50)
+    exam_ids = [e["id"] for e in exams]
+    if exam_ids:
+        await db.exams.delete_many({"id": {"$in": exam_ids}})
+        # Pull exam ids from any students that had them
+        await db.students.update_many(
+            {"exam_ids": {"$in": exam_ids}},
+            {"$pull": {"exam_ids": {"$in": exam_ids}}},
+        )
+    return {"ok": True, "exams_deleted": len(exam_ids)}
+

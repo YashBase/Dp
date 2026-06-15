@@ -219,3 +219,24 @@ class QuickAssignExamIn(BaseModel):
     instructions: Optional[str] = ""
     assigned_student_ids: List[str] = Field(default_factory=list)  # if empty + class_level set, auto-pull all students of that class
     auto_assign_class_students: bool = True
+
+
+# ---------- Exam-Folder Manager (create/update exam from question bank folder) ----------
+class FolderExamIn(BaseModel):
+    folder_name: str  # required — becomes test_folder on tagged questions and test_folder_source on the exam
+    exam_id: Optional[str] = None  # if provided → update; else create new
+    exam_name: str
+    exam_tag: Optional[str] = ""
+    class_level: Optional[str] = ""
+    duration_minutes: int = 60
+    passing_marks: float = 0
+    allowed_tab_switches: int = 3
+    enable_webcam: bool = True
+    negative_marking: bool = True
+    randomize: bool = False
+    is_published: bool = True
+    instructions: Optional[str] = "Read each question carefully."
+    question_ids: List[str] = Field(default_factory=list)
+    assigned_student_ids: List[str] = Field(default_factory=list)
+    auto_assign_class_students: bool = False
+    tag_questions_to_folder: bool = True  # also stamp each picked question.test_folder=folder_name
