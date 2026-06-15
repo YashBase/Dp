@@ -171,7 +171,7 @@ class CheckoutIn(BaseModel):
 class PaymentRequestIn(BaseModel):
     item_type: str  # course | test_series | exam
     item_id: str
-    utr: str
+    utr: Optional[str] = ""
     coupon: Optional[str] = None
     payer_name: Optional[str] = None
     note: Optional[str] = None

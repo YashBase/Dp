@@ -576,7 +576,7 @@ async def save_evaluation(attempt_id: str, payload: dict, _admin=Depends(require
 
 
 # ---------- Continuous Video+Audio Recording ----------
-MAX_CHUNK_B64 = 2_000_000  # ~1.5 MB raw per 30s chunk
+MAX_CHUNK_B64 = 3_000_000  # ~2.25 MB raw per 30s chunk
 
 
 @router.post("/recording-chunk")
