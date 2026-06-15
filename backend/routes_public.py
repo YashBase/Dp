@@ -113,7 +113,13 @@ async def public_recording_chunk(attempt_id: str, chunk_id: str):
     chunk = await db.proctor_recordings.find_one({"id": chunk_id, "attempt_id": attempt_id}, {"_id": 0})
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
-    raw = base64.b64decode(chunk.get("data_base64") or "")
+    s = (chunk.get("data_base64") or "").strip()
+    pad = (-len(s)) % 4
+    s = s + ("=" * pad)
+    try:
+        raw = base64.b64decode(s, validate=False)
+    except Exception:
+        raw = b""
     return StreamingResponse(
         BytesIO(raw),
         media_type=chunk.get("mime_type", "video/webm"),

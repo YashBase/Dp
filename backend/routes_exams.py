@@ -609,7 +609,14 @@ async def upload_recording_chunk(data: RecordingChunkIn, student=Depends(require
 
 
 def _decode_chunk_response(chunk: dict) -> StreamingResponse:
-    raw = base64.b64decode(chunk.get("data_base64") or "")
+    s = (chunk.get("data_base64") or "").strip()
+    # Restore base64 padding if missing & ignore non-alphabet chars
+    pad = (-len(s)) % 4
+    s = s + ("=" * pad)
+    try:
+        raw = base64.b64decode(s, validate=False)
+    except Exception:
+        raw = b""
     return StreamingResponse(
         BytesIO(raw),
         media_type=chunk.get("mime_type", "video/webm"),

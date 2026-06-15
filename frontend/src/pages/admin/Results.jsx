@@ -123,6 +123,7 @@ function Detail({ attemptId, onBack }) {
   const [a, setA] = useState(null);
   const [snaps, setSnaps] = useState([]);
   const [chunks, setChunks] = useState([]);
+  const [chunkUrls, setChunkUrls] = useState({});
   const [snapIdx, setSnapIdx] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [recipient, setRecipient] = useState("");
@@ -133,6 +134,29 @@ function Detail({ attemptId, onBack }) {
     api.get(`/exams/admin/attempts/${attemptId}/snapshots`).then((r) => setSnaps(r.data || []));
     api.get(`/exams/admin/attempts/${attemptId}/recording`).then((r) => setChunks(r.data || [])).catch(() => setChunks([]));
   }, [attemptId]);
+
+  // Fetch each chunk binary with the Bearer token and expose as a blob URL
+  // (a plain <video src> can't carry the Authorization header).
+  useEffect(() => {
+    let cancelled = false;
+    const urls = {};
+    chunks.forEach((c) => {
+      if (chunkUrls[c.id]) { urls[c.id] = chunkUrls[c.id]; return; }
+      api.get(`/exams/admin/attempts/${attemptId}/recording/${c.id}`, { responseType: "blob" })
+        .then((r) => {
+          if (cancelled) return;
+          const url = URL.createObjectURL(r.data);
+          urls[c.id] = url;
+          setChunkUrls((prev) => ({ ...prev, [c.id]: url }));
+        })
+        .catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+      Object.values(urls).forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) {} });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunks, attemptId]);
 
   const openShare = async (channel) => {
     try {
@@ -355,11 +379,17 @@ function Detail({ attemptId, onBack }) {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {chunks.map((c, i) => (
               <div key={c.id} className="border border-border rounded-sm overflow-hidden" data-testid={`admin-recording-chunk-${i}`}>
-                <video
-                  controls preload="metadata"
-                  src={`${API}/exams/admin/attempts/${attemptId}/recording/${c.id}`}
-                  className="w-full aspect-video bg-foreground"
-                />
+                {chunkUrls[c.id] ? (
+                  <video
+                    controls preload="metadata"
+                    src={chunkUrls[c.id]}
+                    className="w-full aspect-video bg-foreground"
+                  />
+                ) : (
+                  <div className="w-full aspect-video bg-foreground flex items-center justify-center text-background text-xs mono">
+                    Loading clip…
+                  </div>
+                )}
                 <div className="px-3 py-1.5 text-[10px] mono text-muted-foreground flex justify-between">
                   <span>#{c.chunk_index + 1} · {(c.at || "").slice(11, 19)}</span>
                   <span>{Math.round((c.size_bytes || 0) / 1024)} KB</span>
