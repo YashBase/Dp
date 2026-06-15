@@ -63,6 +63,13 @@ Build a complete production-ready SaaS Online Examination & LMS for an Indian II
 - **Student exam folder grouping** added — `/app/exams` now groups exams by `exam_tag` mirroring admin view.
 - Tested via `/app/test_reports/iteration_7.json` — 7/7 backend pytest + 9/9 UI scenarios pass.
 
+## Recent Changes (2026-06-15, later)
+- **Class / Section** on students & exams: 11th and 12th Standard. Admin Students dialog has class dropdown; table shows Class column. Admin Exams dialog has Class select; student-side exam cards display class badge.
+- **Tag presets** on Exam dialog: quick-pick chips for JEE Mains, JEE Advanced, MHT-CET, NEET (plus free-text custom tag).
+- **Assigned Students picker** on Exam dialog (new "Students" tab) — admin can target specific students; backend syncs `student.exam_ids` on save/update. Visibility logic: if `assigned_student_ids` is set, only those students see the exam in their portal (even if published).
+- **Student Courses catalog fix** — `/api/student/courses` now returns ALL published courses (free + paid) with a `purchased` flag, instead of hiding paid ones. Paid unowned courses return locked preview (chapters stripped). Course detail page shows "Unlock for ₹X" CTA → PaymentDialog → UTR submission → Admin approval → unlocked content + appears in My Purchases.
+- Tested via `/app/test_reports/iteration_8.json` — 6/6 backend pytest + full E2E course purchase flow verified.
+
 ## Next Action Items
 1. Notifications system (Resend email + Twilio SMS) — P1
 2. Live Razorpay checkout — P1
