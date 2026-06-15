@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
@@ -10,7 +10,7 @@ import { Menu, X } from "lucide-react";
  *
  * Props: brand (string), subtitle, items: [{ to, label, Icon, end, id }], footer (ReactNode)
  */
-export default function MobileNavBar({ brand, subtitle, items, footer }) {
+export default function MobileNavBar({ brand, subtitle, items, footer, footerTestIdPrefix = "mobile" }) {
   const [open, setOpen] = useState(false);
 
   return (

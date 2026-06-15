@@ -24,10 +24,10 @@ export default function AdminLayout() {
   const nav = useNavigate();
   const user = getUser() || {};
 
-  const signOutFooter = (
+  const signOutFooter = (suffix) => (
     <>
       <div className="text-xs px-3 py-2 mono truncate">{user.email}</div>
-      <Button variant="outline" className="w-full justify-start rounded-sm" data-testid="admin-logout-btn"
+      <Button variant="outline" className="w-full justify-start rounded-sm" data-testid={`admin-logout-btn-${suffix}`}
               onClick={() => { logout(); nav("/login"); }}>
         <LogOut className="w-4 h-4 mr-2" /> Sign Out
       </Button>
@@ -36,7 +36,7 @@ export default function AdminLayout() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-background">
-      <MobileNavBar brand="Gyansai" subtitle="Admin Console" items={NAV} footer={signOutFooter} />
+      <MobileNavBar brand="Gyansai" subtitle="Admin Console" items={NAV} footer={signOutFooter("mobile")} />
 
       <aside className="hidden md:flex w-64 border-r border-border flex-col bg-card shrink-0">
         <div className="p-5 border-b border-border">
@@ -62,7 +62,7 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="p-3 border-t border-border">{signOutFooter}</div>
+        <div className="p-3 border-t border-border">{signOutFooter("desktop")}</div>
       </aside>
 
       <main className="flex-1 min-w-0 overflow-x-hidden">
