@@ -187,9 +187,46 @@ async def ocr_extract(payload: OcrRequest, _admin=Depends(require_admin)):
 
 @router.post("/ocr/upload")
 async def ocr_upload(file: UploadFile = File(...), _admin=Depends(require_admin)):
-    """Multipart helper: accept image upload and run OCR."""
+    """Multipart helper: accept image OR PDF upload and run OCR.
+    For PDFs, each page is rasterized to PNG and OCR-extracted in sequence."""
     content = await file.read()
-    if len(content) > 8 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large (max 8MB)")
-    b64 = base64.b64encode(content).decode("utf-8")
-    return await ocr_extract(OcrRequest(image_base64=b64, mime_type=file.content_type or "image/jpeg"))
+    if len(content) > 16 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 16MB)")
+
+    mime = (file.content_type or "").lower()
+    fname = (file.filename or "").lower()
+    is_pdf = "pdf" in mime or fname.endswith(".pdf")
+
+    if not is_pdf:
+        b64 = base64.b64encode(content).decode("utf-8")
+        return await ocr_extract(OcrRequest(image_base64=b64, mime_type=mime or "image/jpeg"))
+
+    # PDF path — render each page to PNG (max 15 pages to keep cost sane)
+    try:
+        import fitz  # PyMuPDF
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF support unavailable: {e}")
+
+    try:
+        pdf = fitz.open(stream=content, filetype="pdf")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
+
+    total_pages_count = pdf.page_count
+    max_pages = min(total_pages_count, 15)
+    all_qs: list = []
+    for i in range(max_pages):
+        page = pdf.load_page(i)
+        pix = page.get_pixmap(dpi=180)
+        img_bytes = pix.tobytes("png")
+        b64 = base64.b64encode(img_bytes).decode("utf-8")
+        try:
+            res = await ocr_extract(OcrRequest(image_base64=b64, mime_type="image/png"))
+            for q in res.get("questions", []):
+                q.setdefault("source_page", i + 1)
+            all_qs.extend(res.get("questions", []))
+        except HTTPException:
+            # Skip failed page but continue with the rest
+            continue
+    pdf.close()
+    return {"questions": all_qs, "pages_processed": max_pages, "total_pages": total_pages_count}

@@ -1,0 +1,58 @@
+{
+  "summary": "Iteration 7: Verified Exam Folders grouping (admin + student) and Photo/PDF Question Upload OCR end-to-end. 7/7 backend pytest tests pass. All 9 review-request scenarios verified via UI + API. Backend route POST /api/questions/ocr/upload accepts PDF, rasterizes via PyMuPDF, and returns real Vision-extracted questions (2 questions extracted from /tmp/test_qs.pdf).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/exams",
+        "issue": "Old exam docs (e.g. 'MHT CET EXAM 11th') don't carry the 'exam_tag' key at all — Mongo simply omits absent fields. UI handles via `e.exam_tag || 'Uncategorized'` so it falls under Uncategorized correctly. Suggestion: backfill exam_tag=None on existing docs, or set default in ExamIn model so the key is always present in API payloads for client clarity."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviors": [
+    "Admin login admin@gyansai.com / admin123 → lands at /admin (admin dashboard).",
+    "Admin /admin/exams groups exams under sections with data-testid='folder-<tag>'. Verified folder-JEE, folder-NEET and folder-Uncategorized render with '📁 <tag>' header + '<n> exam(s)' Badge.",
+    "Admin Create Exam dialog has data-testid='exam-tag' input (with datalist of existing tags). Creating exam with tag='JEE' immediately groups it under folder-JEE after reload.",
+    "Admin /admin/questions has 'Photo/PDF Import' button (data-testid='ocr-upload-btn'). Clicking opens the AI Question Extractor dialog with 'Choose Image or PDF' button (data-testid='ocr-pick-btn') and a hidden file input (data-testid='ocr-file-input') whose accept attribute is 'image/*,application/pdf,.pdf'.",
+    "POST /api/questions/ocr/upload with /tmp/test_qs.pdf returns 200 with shape {questions:[...], pages_processed:1, total_pages:1}. OpenAI Vision extracted 2 real questions ('What is 2+2?' B=4, 'Capital of France?' B=Paris) with options and correct_answer populated. source_page=1 added to each question.",
+    "OCR upload without Authorization header → 403 (require_admin guard works).",
+    "Student login (username='demo', password='demo123') → lands at /app (student dashboard).",
+    "Student /app/exams (linked from sidebar 'Exams') groups exams by tag. Verified data-testid='s-folder-JEE' (1 exam: JEE Mock 1), s-folder-NEET (1 exam: NEET Mock 1), s-folder-Uncategorized (1 exam: MHT CET EXAM 11th). Each section shows '📁 <tag>' header + '<n> exam(s)' Badge + grid of exam cards with Start Exam button (data-testid='start-exam-btn-<id>').",
+    "Backend GET /api/exams returns exam_tag='JEE' for 'JEE Mock 1' and exam_tag='NEET' for 'NEET Mock 1' for both admin and student roles. Student is_published=true && price=0 logic exposes both to demo without enrollment, matching the task spec."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_folders_ocr.py",
+    "/app/test_reports/pytest/iter7_results.xml"
+  ],
+  "action_items": [
+    "Backfill existing exam docs with exam_tag=None (or default '') in DB so every response carries the key — purely cosmetic, UI works without it.",
+    "Consider documenting that the student exams page lives at /app/exams (not /exams) — the review_request referred to '/exams' which actually redirects unauthenticated users to / homepage; only /app/exams is the authenticated student exams route. This is correct per current routing but worth flagging.",
+    "Optional: Show 'No questions extracted — try clearer image' toast already exists, but Vision occasionally adds hallucinated options when the source PDF only has 2 (e.g. test PDF had only A) 3 B) 4 but Vision returned A/B/C/D). Consider warning admins to verify OCR output before bulk-save — already gated by manual review UI."
+  ],
+  "critical_code_review_comments": [
+    "routes_questions.py:202 ocr_upload for non-PDF path passes mime to OcrRequest but OcrRequest in models likely expects only image_base64+mime_type — works, fine. PDFs >15 pages are silently truncated to 15 (line 216). Consider returning a warning in the response (e.g. {warning: 'Only first 15 of N pages processed'}) so admin knows.",
+    "routes_questions.py:218 calls page.get_pixmap(dpi=180) which can produce >5MB PNGs for large pages → base64 → big LLM payload. Consider downscaling to 150 dpi or capping pixmap width.",
+    "Exams.jsx admin grouping uses `e.exam_tag || 'Uncategorized'`; if a tag is just whitespace it could create a phantom group. Already trimmed (line 213). Good.",
+    "student/Exams.jsx page is at route /app/exams (mounted under /app layout); reference to '/exams' in the review_request is misleading — bare /exams 302s to /. Not a bug, just routing convention.",
+    "Questions.jsx OCR dialog: when extraction yields 0 results, a toast is shown but the dialog stays open — fine; saveOcrBatch is disabled correctly when ocrResults is empty (line 144).",
+    "No data-testid on individual student exam folder Start buttons aggregated by tag (start-exam-btn-<id> is per-exam, which is correct). No issue."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_folders_ocr.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7)",
+    "frontend": "100% (9/9 UI scenarios verified)"
+  },
+  "test_credentials": "admin@gyansai.com / admin123 (admin); demo / demo123 (student). Both confirmed working.",
+  "seed_data_creation": "Created and DELETED 'TEST_UI_iter7' exam (tag=JEE) and 'TEST_FolderExam_iter7' (tag=TEST_TAG) via tests — all cleaned up. No residual TEST_ data left in DB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Student exams route is /app/exams (NOT /exams). Admin exams route is /admin/exams. Exam folder grouping uses data-testid 'folder-<tag>' (admin) and 's-folder-<tag>' (student); 'Uncategorized' is used when exam_tag is null/empty/whitespace. PyMuPDF (fitz) is installed and working for PDF OCR — Vision via EMERGENT_LLM_KEY returns proper structured JSON. Test PDF /tmp/test_qs.pdf exists (1.9KB, 1 page) and produces real OCR output. Iteration 7 regression file: /app/backend/tests/test_iter7_folders_ocr.py.",
+  "rca of the issue": "N/A — no bugs, all features verified working."
+}

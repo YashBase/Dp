@@ -109,12 +109,12 @@ export default function Questions() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /> AI Question Extractor</DialogTitle>
               </DialogHeader>
-              <p className="text-sm text-muted-foreground">Upload a JPG/PNG photo of a question paper. Our OpenAI Vision pipeline will extract questions, options & answers.</p>
+              <p className="text-sm text-muted-foreground">Upload a JPG/PNG photo or PDF of a question paper. OpenAI Vision will extract questions, options & answers (each PDF page processed separately).</p>
               <div>
-                <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && runOcr(e.target.files[0])} data-testid="ocr-file-input" />
+                <input ref={fileRef} type="file" accept="image/*,application/pdf,.pdf" hidden onChange={(e) => e.target.files?.[0] && runOcr(e.target.files[0])} data-testid="ocr-file-input" />
                 <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={ocrLoading} data-testid="ocr-pick-btn">
                   {ocrLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />}
-                  {ocrLoading ? "Extracting…" : "Choose Image"}
+                  {ocrLoading ? "Extracting…" : "Choose Image or PDF"}
                 </Button>
               </div>
               {ocrResults.length > 0 && (

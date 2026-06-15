@@ -91,6 +91,7 @@ class ExamIn(BaseModel):
     name: str
     description: Optional[str] = ""
     type: str = "mock"  # mock | full | chapter | weekly
+    exam_tag: Optional[str] = ""  # folder/category — e.g. JEE, MHT-CET, NEET
     duration_minutes: int = 60
     start_at: Optional[str] = None
     end_at: Optional[str] = None

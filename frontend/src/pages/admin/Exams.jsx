@@ -15,6 +15,7 @@ import { Plus, Trash2, Pencil, Copy, ChartBar, Save } from "lucide-react";
 
 const blank = () => ({
   name: "", description: "", type: "mock", duration_minutes: 60,
+  exam_tag: "",
   start_at: "", end_at: "",
   passing_marks: 0, instructions: "Read each question carefully. Marks: +4 correct, -1 wrong (numerical: no negative).",
   randomize: false, negative_marking: true, question_ids: [],
@@ -123,6 +124,13 @@ export default function Exams() {
                   <div><Label>Pass marks</Label><Input type="number" value={form.passing_marks} onChange={(e) => setForm({ ...form, passing_marks: Number(e.target.value) })} /></div>
                   <div><Label>Price (₹)</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} /></div>
                 </div>
+                <div>
+                  <Label>Exam folder / tag <span className="text-xs text-muted-foreground">(e.g. JEE, MHT-CET, NEET)</span></Label>
+                  <Input value={form.exam_tag} onChange={(e) => setForm({ ...form, exam_tag: e.target.value })} placeholder="JEE" className="rounded-sm mt-1" data-testid="exam-tag" list="exam-tag-options" />
+                  <datalist id="exam-tag-options">
+                    {Array.from(new Set(rows.map((r) => r.exam_tag).filter(Boolean))).map((t) => <option key={t} value={t} />)}
+                  </datalist>
+                </div>
                 <div><Label>Instructions</Label><Textarea rows={4} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></div>
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
                   <div>
@@ -197,37 +205,56 @@ export default function Exams() {
         </Dialog>
       </header>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {rows.length === 0 && <div className="col-span-full grid-card p-12 text-center text-muted-foreground">No exams yet.</div>}
-        {rows.map((e) => (
-          <div key={e.id} className="grid-card p-5 brutalist-hover" data-testid={`exam-card-${e.id}`}>
-            <div className="flex justify-between items-start">
-              <div>
-                <Badge variant={e.is_published ? "default" : "secondary"} className="rounded-sm">{e.is_published ? "LIVE" : "DRAFT"}</Badge>
-                <h3 className="heading text-lg font-semibold mt-2">{e.name}</h3>
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{e.description}</p>
+      <div className="space-y-6">
+        {rows.length === 0 && <div className="grid-card p-12 text-center text-muted-foreground">No exams yet.</div>}
+        {(() => {
+          const groups = {};
+          rows.forEach((e) => {
+            const k = (e.exam_tag || "Uncategorized").trim() || "Uncategorized";
+            (groups[k] = groups[k] || []).push(e);
+          });
+          const orderedKeys = Object.keys(groups).sort((a, b) => (a === "Uncategorized" ? 1 : b === "Uncategorized" ? -1 : a.localeCompare(b)));
+          return orderedKeys.map((tag) => (
+            <section key={tag} data-testid={`folder-${tag}`}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="overline">📁 {tag}</div>
+                <Badge variant="outline" className="rounded-sm">{groups[tag].length} exam{groups[tag].length === 1 ? "" : "s"}</Badge>
+                <div className="flex-1 border-t border-border" />
               </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2 mt-4 text-xs">
-              <div><div className="overline">Type</div><div className="mono mt-1">{e.type}</div></div>
-              <div><div className="overline">Duration</div><div className="mono mt-1">{e.duration_minutes} min</div></div>
-              <div><div className="overline">Questions</div><div className="mono mt-1">{(e.question_ids || []).length}</div></div>
-            </div>
-            {(e.start_at || e.end_at) && (
-              <div className="mt-3 text-[11px] mono text-muted-foreground border-t border-border pt-2 space-y-0.5">
-                {e.start_at && <div>↗ Opens: {new Date(e.start_at).toLocaleString()}</div>}
-                {e.end_at && <div>↘ Closes: {new Date(e.end_at).toLocaleString()}</div>}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {groups[tag].map((e) => (
+                  <div key={e.id} className="grid-card p-5 brutalist-hover" data-testid={`exam-card-${e.id}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <Badge variant={e.is_published ? "default" : "secondary"} className="rounded-sm">{e.is_published ? "LIVE" : "DRAFT"}</Badge>
+                        <h3 className="heading text-lg font-semibold mt-2">{e.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{e.description}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-4 text-xs">
+                      <div><div className="overline">Type</div><div className="mono mt-1">{e.type}</div></div>
+                      <div><div className="overline">Duration</div><div className="mono mt-1">{e.duration_minutes} min</div></div>
+                      <div><div className="overline">Questions</div><div className="mono mt-1">{(e.question_ids || []).length}</div></div>
+                    </div>
+                    {(e.start_at || e.end_at) && (
+                      <div className="mt-3 text-[11px] mono text-muted-foreground border-t border-border pt-2 space-y-0.5">
+                        {e.start_at && <div>↗ Opens: {new Date(e.start_at).toLocaleString()}</div>}
+                        {e.end_at && <div>↘ Closes: {new Date(e.end_at).toLocaleString()}</div>}
+                      </div>
+                    )}
+                    <div className="flex gap-1 mt-4 flex-wrap">
+                      <Button size="sm" variant="outline" onClick={() => { setEditingId(e.id); setForm({ ...blank(), ...e }); setOpen(true); }} data-testid={`exam-edit-${e.id}`}><Pencil className="w-3 h-3 mr-1" />Edit</Button>
+                      <Button size="sm" variant="outline" onClick={() => togglePub(e)} data-testid={`exam-publish-${e.id}`}>{e.is_published ? "Unpublish" : "Publish"}</Button>
+                      <Button size="sm" variant="outline" onClick={() => clone(e.id)}><Copy className="w-3 h-3 mr-1" />Clone</Button>
+                      <Button size="sm" variant="outline" onClick={() => showAnalytics(e)} data-testid={`exam-analytics-${e.id}`}><ChartBar className="w-3 h-3 mr-1" />Analytics</Button>
+                      <Button size="sm" variant="ghost" onClick={() => del(e.id)}><Trash2 className="w-3 h-3 text-destructive" /></Button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-            <div className="flex gap-1 mt-4 flex-wrap">
-              <Button size="sm" variant="outline" onClick={() => { setEditingId(e.id); setForm({ ...blank(), ...e }); setOpen(true); }} data-testid={`exam-edit-${e.id}`}><Pencil className="w-3 h-3 mr-1" />Edit</Button>
-              <Button size="sm" variant="outline" onClick={() => togglePub(e)} data-testid={`exam-publish-${e.id}`}>{e.is_published ? "Unpublish" : "Publish"}</Button>
-              <Button size="sm" variant="outline" onClick={() => clone(e.id)}><Copy className="w-3 h-3 mr-1" />Clone</Button>
-              <Button size="sm" variant="outline" onClick={() => showAnalytics(e)} data-testid={`exam-analytics-${e.id}`}><ChartBar className="w-3 h-3 mr-1" />Analytics</Button>
-              <Button size="sm" variant="ghost" onClick={() => del(e.id)}><Trash2 className="w-3 h-3 text-destructive" /></Button>
-            </div>
-          </div>
-        ))}
+            </section>
+          ));
+        })()}
       </div>
 
       <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
