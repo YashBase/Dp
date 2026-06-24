@@ -26,18 +26,39 @@ export default function PublicExamJoin() {
       .catch((e) => setErr(e?.response?.data?.detail || "Exam link is invalid or has expired."));
   }, [examId]);
 
-  // If the user is already logged in as a student, auto-claim the exam and route to attempts.
+  // Helper: start the exam attempt and route into the proctor portal.
+  // Used after Quick Join AND after auto-claim for already-logged-in students.
+  const startAndGo = async () => {
+    try {
+      const { data: attempt } = await api.post("/exams/start", { exam_id: examId });
+      nav(`/attempt/${attempt.id}`);
+    } catch (er) {
+      const detail = er?.response?.data?.detail || "Could not start exam";
+      // If already submitted, route to /app/exams so they at least see status
+      if (detail.includes("already attempted")) {
+        toast.info(detail);
+        nav("/app/exams");
+      } else {
+        toast.error(detail);
+      }
+    }
+  };
+
+  // If the user is already logged in as a student, auto-claim the exam and START it.
   useEffect(() => {
     if (!isAuthed() || getRole() !== "student") return;
+    setAutoStarting(true);
     api.post(`/exams/${examId}/claim`)
       .then(() => {
-        toast.success("Exam unlocked — opening your exams…");
-        nav("/app/exams");
+        toast.success("Exam unlocked — starting…");
+        startAndGo();
       })
-      .catch((er) => toast.error(er?.response?.data?.detail || "Could not unlock exam"));
+      .catch((er) => { setAutoStarting(false); toast.error(er?.response?.data?.detail || "Could not unlock exam"); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examId]);
 
   const [creds, setCreds] = useState(null);
+  const [autoStarting, setAutoStarting] = useState(isAuthed() && getRole() === "student");
 
   const submitJoin = async (e) => {
     e?.preventDefault?.();
@@ -52,8 +73,8 @@ export default function PublicExamJoin() {
         setJoinOpen(false);
         toast.success("Account created — save your login below!");
       } else {
-        toast.success("Welcome back — exam unlocked.");
-        nav("/app/exams");
+        toast.success("Welcome back — starting exam…");
+        startAndGo();
       }
     } catch (er) {
       toast.error(er?.response?.data?.detail || "Could not join");
@@ -72,6 +93,16 @@ export default function PublicExamJoin() {
     );
   }
   if (!exam) return <div className="p-12 mono text-sm">Loading exam…</div>;
+  if (autoStarting) return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6" data-testid="auto-starting">
+      <div className="grid-card p-10 max-w-md text-center">
+        <div className="overline">// SHARED EXAM</div>
+        <h1 className="heading text-2xl font-bold mt-2">{exam.name}</h1>
+        <p className="text-sm text-muted-foreground mt-2 mono">Unlocking & starting your exam…</p>
+        <div className="mt-5 mono text-xs animate-pulse">● ● ●</div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -135,8 +166,8 @@ export default function PublicExamJoin() {
             </div>
             <div className="flex gap-2 mt-3">
               <Button onClick={() => { navigator.clipboard.writeText(`${creds.username} / ${creds.password}`); toast.success("Credentials copied"); }} variant="outline" className="rounded-sm" data-testid="creds-copy">Copy</Button>
-              <Button onClick={() => nav("/app/exams")} className="rounded-sm flex-1" data-testid="creds-proceed">
-                Continue to Exam <ArrowRight className="w-4 h-4 ml-1" />
+              <Button onClick={startAndGo} className="rounded-sm flex-1" data-testid="creds-proceed">
+                Start Exam Now <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
           </div>

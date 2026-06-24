@@ -76,16 +76,14 @@ Build a complete production-ready SaaS Online Examination & LMS for an Indian II
 - **Quick-Assign Exam Wizard** — new button (`quick-assign-btn`) in Question Bank header opens "Folder → Class → Exam" dialog. Picks a folder + class (11th/12th) + tag (JEE Mains/Adv/MHT-CET/NEET) + exam name → backend `POST /api/questions/quick-assign-exam` creates an exam with ALL questions in that folder and auto-assigns it to every active student of that class. Returns `{exam, questions_count, assigned_count}`.
 - Tested via `/app/test_reports/iteration_9.json` — 8/8 backend pytest + all UI selectors verified, including class-filter exclusion (11th student doesn't see a 12th-only auto-exam).
 
-## Recent Changes (2026-06-24, late) — Public Exam Share-Link Join (Iter 13-14)
+## Recent Changes (2026-06-24, late) — Public Exam Share-Link Join (Iter 13-15)
 - **Share link is now public-friendly** — `POST /api/exams/{id}/share` returns `/exam/{id}` (was `/login?join=…`).
-- **Public route `/exam/:examId`** (PublicExamJoin) — no login required. Shows exam preview (name, duration, question count, instructions, marking). Three CTAs:
-  - **Quick Join** — name + mobile → instant guest student, persistent credentials card to save login.
-  - **Log In** — `/login?next=/exam/{id}` → after auth, returns to landing, **auto-claims** the exam via `POST /api/exams/{id}/claim`, routes to `/app/exams`.
-  - **Sign Up** — `/signup?next=/exam/{id}` → signup auto-detects `next`, sends `from_share_link=true` + `target_exam_id` → backend auto-approves (no admin wait) + grants the exam → returns auth token → student lands on /app/exams with the shared exam ready to attempt.
-- Existing-student auto-claim on /exam/<id> when already authed.
-- Idempotent re-join via mobile.
-- **Route rename fix** — student attempt portal moved from `/exam/:attemptId` → `/attempt/:attemptId` to avoid shadowing the new public path.
-- Tested: iter13 (8/8 backend + UI walkthrough), iter14 (8/8 backend + all 3 entry flows E2E verified).
+- **Public route `/exam/:examId`** (PublicExamJoin) — three CTAs (Quick Join / Log In / Sign Up).
+- **(Iter 15) Direct-to-attempt** — after authentication via ANY path (Quick Join, Log In, Sign Up), the user is automatically routed into the proctored exam portal at `/attempt/<attemptId>` (not just to `/app/exams`). Already-logged-in students who open `/exam/<id>` see a brief "Unlocking…" splash, then auto-claim → auto-start → into the pre-exam camera gate.
+- Quick Join still shows the credentials card; "Start Exam Now" button kicks off `/exams/start` and routes into the attempt portal.
+- If a student has already attempted the exam, they get a toast and fall back to `/app/exams`.
+- **Route rename** — student attempt portal lives at `/attempt/:attemptId` (was `/exam/:attemptId`) to avoid shadowing the public share path.
+- Iterations tested: iter13 (8/8), iter14 (8/8 + 3 entry flows E2E), iter15 (Quick Join + Sign Up paths verified routing straight into `/attempt/<id>`).
 
 ## Recent Changes (2026-06-24) — V2 Spec Wave (Iter 12)
 Implemented & verified (13/13 backend pytests + UI):
