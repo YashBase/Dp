@@ -78,7 +78,7 @@ async def get_current_user(
     if not user_id or not role:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    coll = "admins" if role == "admin" else "students"
+    coll = {"admin": "admins", "teacher": "teachers", "student": "students"}.get(role, "students")
     user = await db[coll].find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -87,6 +87,13 @@ async def get_current_user(
 
 
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    # Teachers also get admin-level access for the routes flagged below (CRUD on Q/exams/PDF).
+    if user.get("role") not in ("admin", "teacher"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+async def require_admin_only(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user

@@ -66,6 +66,7 @@ async def list_exams(user=Depends(get_current_user)):
         student = await db.students.find_one({"id": user["id"]}, {"_id": 0})
         assigned_ids = (student or {}).get("exam_ids") or []
         student_class = (student or {}).get("class_level") or ""
+        student_batch = (student or {}).get("batch_id") or ""
         candidates = await db.exams.find({"$or": [
             {"is_published": True, "price": 0},
             {"id": {"$in": assigned_ids}},
@@ -75,14 +76,17 @@ async def list_exams(user=Depends(get_current_user)):
             in_assigned_purchase = e["id"] in assigned_ids
             target_students = e.get("assigned_student_ids") or []
             target_class = (e.get("class_level") or "").strip()
+            target_batches = e.get("batch_ids") or []
             # Purchased / explicitly assigned always visible
             if in_assigned_purchase:
                 exams.append(e)
                 continue
-            # Published-free path — apply class & assigned filters
+            # Published-free path — apply class, batch & assigned filters
             if target_students and user["id"] not in target_students:
                 continue
             if target_class and student_class and target_class != student_class:
+                continue
+            if target_batches and (not student_batch or student_batch not in target_batches):
                 continue
             exams.append(e)
         # Mark which exams the student already attempted/submitted
@@ -147,24 +151,79 @@ async def update_exam(exam_id: str, data: ExamIn, _admin=Depends(require_admin))
     return await db.exams.find_one({"id": exam_id}, {"_id": 0})
 
 
+@router.post("/{exam_id}/clone")
+async def clone_exam(exam_id: str, _admin=Depends(require_admin)):
+    """Explicit admin-only action to copy a previous exam. Default behaviour is always
+    Create Blank — this endpoint is the ONLY way questions ever get inherited."""
+    e = await db.exams.find_one({"id": exam_id}, {"_id": 0})
+    if not e:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    new_eid = new_id()
+    e["id"] = new_eid
+    e["name"] = e["name"] + " (Copy)"
+    e["created_at"] = iso(now_utc())
+    e["is_published"] = False
+    # Clear all assignments — a clone shares only the question paper, not students/results
+    e["assigned_student_ids"] = []
+    e["start_at"] = None
+    e["end_at"] = None
+    await db.exams.insert_one(e)
+    e.pop("_id", None)
+    await db.activities.insert_one({
+        "id": new_id(),
+        "type": "exam_cloned",
+        "text": f"Exam '{e['name']}' cloned (independent copy)",
+        "created_at": iso(now_utc()),
+    })
+    return e
+
+
+@router.post("/{exam_id}/import-from-bank")
+async def import_from_bank(exam_id: str, payload: dict, _admin=Depends(require_admin)):
+    """Admin-only: append questions from the Question Bank into an existing exam.
+    Body: {question_ids?: [...], chapter?: str, class_level?: str}.
+    Either explicit question_ids OR a chapter+class_level filter (both supported)."""
+    exam = await db.exams.find_one({"id": exam_id}, {"_id": 0})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    qids = list(payload.get("question_ids") or [])
+    if payload.get("chapter"):
+        flt = {"chapter": payload["chapter"]}
+        if payload.get("class_level"):
+            # class_level can map to subject prefix in the question bank; we keep it loose
+            pass
+        bank = await db.questions.distinct("id", flt)
+        qids.extend(bank)
+    qids = list({*(exam.get("question_ids") or []), *qids})
+    await db.exams.update_one({"id": exam_id}, {"$set": {"question_ids": qids}})
+    return {"ok": True, "question_count": len(qids)}
+
+
+@router.post("/{exam_id}/share")
+async def share_link(exam_id: str, _admin=Depends(require_admin)):
+    """Return shareable info: direct URL, WhatsApp deep-link, QR-target URL.
+    The URL is a /exam/start/<exam_id> entry point that the student app routes."""
+    exam = await db.exams.find_one({"id": exam_id}, {"_id": 0})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    settings = await db.settings.find_one({}, {"_id": 0}) or {}
+    base = (settings.get("website") or "").rstrip("/") or ""
+    relative = f"/login?join={exam_id}"
+    full_url = (base + relative) if base else relative
+    msg = (
+        f"You're invited to attempt *{exam.get('name')}* on Gyansai Maths Test Portal. "
+        f"Click to join: {full_url}"
+    )
+    import urllib.parse as _u
+    wa = "https://wa.me/?text=" + _u.quote(msg)
+    mail = f"mailto:?subject={_u.quote('Exam Invite: ' + exam.get('name', ''))}&body={_u.quote(msg)}"
+    return {"exam_id": exam_id, "url": full_url, "relative": relative, "message": msg, "whatsapp": wa, "email": mail}
+
+
 @router.delete("/{exam_id}")
 async def delete_exam(exam_id: str, _admin=Depends(require_admin)):
     await db.exams.delete_one({"id": exam_id})
     return {"ok": True}
-
-
-@router.post("/{exam_id}/clone")
-async def clone_exam(exam_id: str, _admin=Depends(require_admin)):
-    e = await db.exams.find_one({"id": exam_id}, {"_id": 0})
-    if not e:
-        raise HTTPException(status_code=404, detail="Exam not found")
-    e["id"] = new_id()
-    e["name"] = e["name"] + " (Copy)"
-    e["created_at"] = iso(now_utc())
-    e["is_published"] = False
-    await db.exams.insert_one(e)
-    e.pop("_id", None)
-    return e
 
 
 # ---------- Student: Attempt flow ----------

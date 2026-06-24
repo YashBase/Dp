@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Calculator, Camera, ChartBar, ShieldCheck, Trophy, Sparkles, BookOpen, ArrowRight } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Calculator, Camera, ChartBar, ShieldCheck, Trophy, Sparkles, BookOpen, ArrowRight, GraduationCap, MessageSquare, Phone, X } from "lucide-react";
 
 const HERO_IMG = "https://images.unsplash.com/photo-1637589308599-3478cc55510d?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200";
 
@@ -10,12 +11,26 @@ export default function Landing() {
   const [inst, setInst] = useState({});
   const [courses, setCourses] = useState([]);
   const [series, setSeries] = useState([]);
+  const [admissionsOpen, setAdmissionsOpen] = useState(false);
 
   useEffect(() => {
     api.get("/public/institute").then((r) => setInst(r.data)).catch(() => {});
     api.get("/public/courses").then((r) => setCourses(r.data)).catch(() => {});
     api.get("/public/test-series").then((r) => setSeries(r.data)).catch(() => {});
+    // Admissions popup — show once every 24 hours via localStorage cookie
+    try {
+      const last = Number(localStorage.getItem("admissions_popup_last") || "0");
+      if (Date.now() - last > 24 * 60 * 60 * 1000) {
+        setTimeout(() => {
+          setAdmissionsOpen(true);
+          localStorage.setItem("admissions_popup_last", String(Date.now()));
+        }, 1200);
+      }
+    } catch (_) { /* ignore */ }
   }, []);
+
+  const waNumber = (inst.contact_number || "").replace(/\D/g, "") || "919999999999";
+  const waLink = `https://wa.me/${waNumber}?text=${encodeURIComponent("Hi, I'm interested in joining Gyansai 11th/12th Mathematics. Please share details.")}`;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -38,12 +53,38 @@ export default function Landing() {
             <a href="#contact" className="hover:text-primary transition-colors" data-testid="nav-contact">Contact</a>
           </nav>
           <div className="flex gap-2 shrink-0">
-            <Link to="/login"><Button variant="outline" size="sm" className="rounded-sm" data-testid="nav-login-btn">Sing Up</Button></Link>
+            <Link to="/signup"><Button variant="outline" size="sm" className="rounded-sm" data-testid="nav-signup-btn">Sign Up</Button></Link>
             <Link to="/login"><Button variant="outline" size="sm" className="rounded-sm" data-testid="nav-login-btn">Login</Button></Link>
             <Link to="/login?role=admin"><Button size="sm" className="rounded-sm hidden sm:inline-flex" data-testid="nav-admin-btn">Admin</Button></Link>
           </div>
         </div>
       </header>
+
+      {/* Admissions popup — once / 24h */}
+      <Dialog open={admissionsOpen} onOpenChange={setAdmissionsOpen}>
+        <DialogContent className="rounded-sm max-w-md" data-testid="admissions-popup">
+          <DialogHeader>
+            <DialogTitle className="heading text-2xl flex items-center gap-2"><GraduationCap className="w-6 h-6 text-primary" /> Admissions Open</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="border border-border rounded-sm p-3 bg-muted/30">
+              <div className="overline text-[10px]">// Mathematics Courses</div>
+              <ul className="mt-1 text-sm space-y-1">
+                <li>★ 11th Science Mathematics</li>
+                <li>★ 12th Science Mathematics</li>
+              </ul>
+            </div>
+            <p className="text-xs text-muted-foreground">Targeted prep for IIT-JEE, MHT-CET & Boards. Live mock tests, OCR question bank, recorded proctored exams.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Link to="/signup"><Button className="w-full rounded-sm" data-testid="admissions-enroll"><GraduationCap className="w-4 h-4 mr-1" /> Enroll Now</Button></Link>
+              <Link to="/signup"><Button variant="outline" className="w-full rounded-sm" data-testid="admissions-demo">Free Demo</Button></Link>
+              <a href={waLink} target="_blank" rel="noreferrer"><Button variant="outline" className="w-full rounded-sm" data-testid="admissions-whatsapp"><MessageSquare className="w-4 h-4 mr-1" /> WhatsApp</Button></a>
+              <a href={`tel:${inst.contact_number || ""}`}><Button variant="outline" className="w-full rounded-sm" data-testid="admissions-call"><Phone className="w-4 h-4 mr-1" /> Contact Us</Button></a>
+            </div>
+            <button onClick={() => setAdmissionsOpen(false)} className="text-[10px] mono text-muted-foreground hover:text-foreground w-full text-center pt-1" data-testid="admissions-close"><X className="w-3 h-3 inline mr-1" /> dismiss (24h)</button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Hero */}
       <section className="relative overflow-hidden">

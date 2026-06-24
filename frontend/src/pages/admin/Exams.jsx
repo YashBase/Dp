@@ -11,20 +11,31 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, Copy, ChartBar, Save } from "lucide-react";
+import { Plus, Trash2, Pencil, Copy, ChartBar, Save, Share2, MessageSquare, Mail, Link as LinkIcon, QrCode } from "lucide-react";
 
 const blank = () => ({
-  name: "", description: "", type: "mock", duration_minutes: 60,
+  name: "", description: "", type: "mock", exam_type: "mock", duration_minutes: 60,
   exam_tag: "",
   class_level: "",
+  batch_ids: [],
   start_at: "", end_at: "",
-  passing_marks: 0, instructions: "Read each question carefully. Marks: +4 correct, -1 wrong (numerical: no negative).",
+  passing_marks: 0, total_marks: 0,
+  marking_mode: "custom",  // positive | custom | none
+  default_marks: 4, default_negative: 1,
+  instructions: "Read each question carefully. Marks: +4 correct, -1 wrong (numerical: no negative).",
   randomize: false, negative_marking: true, question_ids: [],
   assigned_student_ids: [],
   allowed_tab_switches: 3, enable_webcam: true, is_published: false, price: 0,
 });
 
 const TAG_PRESETS = ["JEE Mains", "JEE Advanced", "MHT-CET", "NEET"];
+const EXAM_TYPES = [
+  { v: "weekly", l: "Weekly Test" },
+  { v: "unit", l: "Unit Test" },
+  { v: "chapter", l: "Chapter Test" },
+  { v: "mock", l: "Mock Test" },
+  { v: "final", l: "Final Test" },
+];
 
 // Convert ISO string ↔ datetime-local input value (no timezone offset)
 const isoToLocal = (s) => {
@@ -40,6 +51,7 @@ export default function Exams() {
   const [rows, setRows] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [students, setStudents] = useState([]);
+  const [batches, setBatches] = useState([]);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(blank());
@@ -47,16 +59,28 @@ export default function Exams() {
   const [analytics, setAnalytics] = useState(null);
   const [filterSubject, setFilterSubject] = useState("all");
   const [studentSearch, setStudentSearch] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
+  const [share, setShare] = useState(null);
 
   const load = async () => {
-    const [{ data: e }, { data: q }, { data: s }] = await Promise.all([
+    const [{ data: e }, { data: q }, { data: s }, { data: b }] = await Promise.all([
       api.get("/exams"),
       api.get("/questions"),
       api.get("/admin/students"),
+      api.get("/batches"),
     ]);
     setRows(e);
     setQuestions(q);
     setStudents(s);
+    setBatches(b);
+  };
+
+  const openShare = async (e) => {
+    try {
+      const { data } = await api.post(`/exams/${e.id}/share`);
+      setShare({ ...data, exam_name: e.name });
+      setShareOpen(true);
+    } catch (err) { toast.error("Could not generate share link"); }
   };
 
   useEffect(() => { load(); }, []);
@@ -118,19 +142,16 @@ export default function Exams() {
                 <div><Label>Exam name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="exam-name" /></div>
                 <div><Label>Description</Label><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div><Label>Type</Label>
-                    <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
-                      <SelectTrigger className="rounded-sm"><SelectValue /></SelectTrigger>
+                  <div><Label>Exam Type</Label>
+                    <Select value={form.exam_type || form.type || "mock"} onValueChange={(v) => setForm({ ...form, exam_type: v, type: v })}>
+                      <SelectTrigger className="rounded-sm" data-testid="exam-type-select"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="mock">Mock</SelectItem>
-                        <SelectItem value="full">Full-length</SelectItem>
-                        <SelectItem value="chapter">Chapter test</SelectItem>
-                        <SelectItem value="weekly">Weekly</SelectItem>
+                        {EXAM_TYPES.map((t) => <SelectItem key={t.v} value={t.v}>{t.l}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
                   <div><Label>Class / Section</Label>
-                    <Select value={form.class_level || "any"} onValueChange={(v) => setForm({ ...form, class_level: v === "any" ? "" : v })}>
+                    <Select value={form.class_level || "any"} onValueChange={(v) => setForm({ ...form, class_level: v === "any" ? "" : v, batch_ids: [] })}>
                       <SelectTrigger className="rounded-sm" data-testid="exam-class"><SelectValue placeholder="Any" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="any">Any (Both 11th & 12th)</SelectItem>
@@ -142,6 +163,47 @@ export default function Exams() {
                   <div><Label>Duration (min)</Label><Input type="number" value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} data-testid="exam-duration" /></div>
                   <div><Label>Price (₹)</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} /></div>
                 </div>
+
+                <div>
+                  <Label>Marking Pattern</Label>
+                  <div className="flex flex-wrap gap-2 mt-1.5">
+                    {[
+                      { v: "positive", l: "Positive only (+marks)" },
+                      { v: "custom", l: "Custom (+/-)" },
+                      { v: "none", l: "No negative" },
+                    ].map((m) => (
+                      <button type="button" key={m.v}
+                        onClick={() => setForm({ ...form, marking_mode: m.v, negative_marking: m.v === "custom" })}
+                        className={`px-2.5 py-1 text-xs rounded-sm border mono transition-colors ${(form.marking_mode || "custom") === m.v ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                        data-testid={`mark-mode-${m.v}`}>
+                        {m.l}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <div><Label className="text-xs">Default +marks</Label><Input type="number" value={form.default_marks} onChange={(e) => setForm({ ...form, default_marks: Number(e.target.value) })} className="rounded-sm mono" data-testid="default-marks" /></div>
+                    <div><Label className="text-xs">Default -marks</Label><Input type="number" disabled={form.marking_mode !== "custom"} value={form.default_negative} onChange={(e) => setForm({ ...form, default_negative: Number(e.target.value) })} className="rounded-sm mono" data-testid="default-negative" /></div>
+                  </div>
+                </div>
+
+                {form.class_level && (
+                  <div>
+                    <Label>Target Batches (optional)</Label>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {batches.filter((b) => b.class_level === form.class_level).map((b) => (
+                        <label key={b.id} className="flex items-center gap-1.5 text-xs px-2 py-1 border border-border rounded-sm cursor-pointer hover:bg-muted">
+                          <Checkbox
+                            checked={(form.batch_ids || []).includes(b.id)}
+                            onCheckedChange={(c) => setForm({ ...form, batch_ids: c ? [...(form.batch_ids || []), b.id] : (form.batch_ids || []).filter((i) => i !== b.id) })}
+                            data-testid={`bpick-${b.id}`}
+                          />
+                          {b.name}
+                        </label>
+                      ))}
+                      {batches.filter((b) => b.class_level === form.class_level).length === 0 && <span className="text-[11px] text-muted-foreground mono">No batches yet for {form.class_level}. Create one in Batches.</span>}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label>Exam folder / tag</Label>
                   <div className="flex flex-wrap gap-1.5 mt-1.5 mb-2">
@@ -329,6 +391,7 @@ export default function Exams() {
                     <div className="flex gap-1 mt-4 flex-wrap">
                       <Button size="sm" variant="outline" onClick={() => { setEditingId(e.id); setForm({ ...blank(), ...e }); setOpen(true); }} data-testid={`exam-edit-${e.id}`}><Pencil className="w-3 h-3 mr-1" />Edit</Button>
                       <Button size="sm" variant="outline" onClick={() => togglePub(e)} data-testid={`exam-publish-${e.id}`}>{e.is_published ? "Unpublish" : "Publish"}</Button>
+                      <Button size="sm" variant="outline" onClick={() => openShare(e)} data-testid={`exam-share-${e.id}`}><Share2 className="w-3 h-3 mr-1" />Share</Button>
                       <Button size="sm" variant="outline" onClick={() => clone(e.id)}><Copy className="w-3 h-3 mr-1" />Clone</Button>
                       <Button size="sm" variant="outline" onClick={() => showAnalytics(e)} data-testid={`exam-analytics-${e.id}`}><ChartBar className="w-3 h-3 mr-1" />Analytics</Button>
                       <Button size="sm" variant="ghost" onClick={() => del(e.id)}><Trash2 className="w-3 h-3 text-destructive" /></Button>
@@ -360,6 +423,30 @@ export default function Exams() {
                 {Object.entries(analytics.subject_avg || {}).map(([k, v]) => (
                   <div key={k} className="flex justify-between text-sm border-b border-border last:border-0 py-1.5"><span>{k}</span><span className="mono">{v}</span></div>
                 ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Exam Link Dialog */}
+      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+        <DialogContent className="rounded-sm max-w-md" data-testid="share-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Share2 className="w-4 h-4 text-primary" /> Share Exam</DialogTitle>
+          </DialogHeader>
+          {share && (
+            <div className="space-y-3">
+              <div className="text-sm font-medium">{share.exam_name}</div>
+              <div className="border border-border rounded-sm p-2.5 mono text-xs break-all bg-muted/30" data-testid="share-url">{share.url}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" onClick={() => { navigator.clipboard.writeText(share.url); toast.success("Link copied"); }} data-testid="share-copy"><LinkIcon className="w-4 h-4 mr-1" /> Copy</Button>
+                <a href={share.whatsapp} target="_blank" rel="noreferrer"><Button variant="outline" className="w-full" data-testid="share-whatsapp"><MessageSquare className="w-4 h-4 mr-1" /> WhatsApp</Button></a>
+                <a href={share.email}><Button variant="outline" className="w-full" data-testid="share-email"><Mail className="w-4 h-4 mr-1" /> Email</Button></a>
+                <Button variant="outline" onClick={() => window.open(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(share.url)}`, "_blank")} data-testid="share-qr"><QrCode className="w-4 h-4 mr-1" /> QR Code</Button>
+              </div>
+              <div className="border border-border rounded-sm p-2 bg-muted/30">
+                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(share.url)}`} alt="QR code" className="mx-auto block" />
               </div>
             </div>
           )}

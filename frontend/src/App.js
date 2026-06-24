@@ -6,6 +6,7 @@ import Protected from "@/components/Protected";
 
 const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
+const Signup = lazy(() => import("@/pages/Signup"));
 const PublicResult = lazy(() => import("@/pages/PublicResult"));
 
 const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout"));
@@ -19,6 +20,11 @@ const AdminEvaluation = lazy(() => import("@/pages/admin/Evaluation"));
 const AdminCourses = lazy(() => import("@/pages/admin/Courses"));
 const AdminTestSeries = lazy(() => import("@/pages/admin/TestSeries"));
 const AdminSettings = lazy(() => import("@/pages/admin/Settings"));
+const AdminBatches = lazy(() => import("@/pages/admin/Batches"));
+const AdminTeachers = lazy(() => import("@/pages/admin/Teachers"));
+const AdminAttendance = lazy(() => import("@/pages/admin/Attendance"));
+const AdminNotifications = lazy(() => import("@/pages/admin/Notifications"));
+const AdminStudyMaterial = lazy(() => import("@/pages/admin/StudyMaterial"));
 
 const StudentLayout = lazy(() => import("@/pages/student/StudentLayout"));
 const StudentDashboard = lazy(() => import("@/pages/student/StudentDashboard"));
@@ -47,6 +53,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
             <Route path="/r/:attemptId" element={<PublicResult />} />
 
             <Route
@@ -55,8 +62,13 @@ function App() {
             >
               <Route index element={<AdminDashboard />} />
               <Route path="students" element={<AdminStudents />} />
+              <Route path="teachers" element={<AdminTeachers />} />
+              <Route path="batches" element={<AdminBatches />} />
               <Route path="questions" element={<AdminQuestions />} />
               <Route path="exams" element={<AdminExams />} />
+              <Route path="attendance" element={<AdminAttendance />} />
+              <Route path="study-material" element={<AdminStudyMaterial />} />
+              <Route path="notifications" element={<AdminNotifications />} />
               <Route path="results" element={<AdminResults />} />
               <Route path="results/:attemptId" element={<AdminResults />} />
               <Route path="evaluation" element={<AdminEvaluation />} />

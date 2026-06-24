@@ -1,0 +1,56 @@
+{
+  "summary": "Iter12 — v2 features (Batches, Teachers, Student-signup-approval, Public batches, Independent-exam architecture: clone/import-from-bank/share, Attendance, Study Material, Notifications with MOCKED channels, Exam batch_ids visibility filter). 13/13 backend pytests pass on /app/backend/tests/test_iter12_v2_features.py. Frontend UI verified end-to-end: all 5 new admin nav data-testids present (nav-teachers/batches/attendance/study-material/notifications) and all 5 pages render with proper headings (Teacher Accounts, Batch Management, Attendance Tracker, Library, Broadcast Centre). Landing page Admissions popup renders with admissions-popup + admissions-enroll/demo/whatsapp buttons; localStorage 'admissions_popup_last' timestamp is written on dismiss. Signup page renders with data-testid='signup-form'. Admin Students page renders approve-signup-<id> badge (1 pending student detected post backend signup test). Admin Exams page: 8 exam-share-<id> buttons; clicking one opens share-dialog containing share-copy/share-whatsapp/share-email/share-qr controls AND an inline QR <img>. New Exam dialog includes exam-type-select (Mock Test selected), mark-mode-positive/custom/none (toggling 'No negative' correctly sets disabled attr on default-negative), default-marks and default-negative inputs. Backward-compat: existing exams + demo student still functional.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Landing/AdmissionsPopup", "issue": "Spec asked for data-testid='admissions-contact' on the Contact Us button; implementation uses data-testid='admissions-call' instead. Functionally equivalent (tel: link) but testid name diverges from PRD.", "selector": "[data-testid=admissions-call]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviors": [
+    "POST/GET/PUT/DELETE /api/batches all 200 (admin auth); list response includes student_count; DELETE unassigns students.batch_id and pulls from exams.batch_ids (covered by code-path, batch delete returns ok).",
+    "POST /api/admin/teachers creates teacher with hashed password (password_hash hidden in response); POST /api/auth/teacher/login returns {token, role:'teacher'}; wrong password → 401.",
+    "POST /api/auth/signup creates student with signup_status='pending' (auto_approved=False) and unique username. POST /api/auth/student/login → 403 'pending'. PUT /api/admin/students/{id} {signup_status:'approved'} → subsequent login succeeds with token.",
+    "GET /api/public/batches returns batch list with no auth (200).",
+    "POST /api/exams creates exam with question_ids=[] by default (independent architecture).",
+    "POST /api/exams/{id}/clone returns separate exam with same question_ids, is_published=false, assigned_student_ids=[] (assignments cleared).",
+    "POST /api/exams/{id}/import-from-bank with {question_ids:[a,b]} appends; calling again with same ids → no duplicates (question_count stays 2).",
+    "POST /api/exams/{id}/share returns {url, whatsapp, email, message}; URL contains /login?join=<exam_id>; whatsapp starts with https://wa.me/.",
+    "POST /api/attendance/mark upserts (marking same date+student twice yields 1 row). GET /api/attendance?date=YYYY-MM-DD returns rows. GET /api/attendance/my-stats (student auth) returns percentage + total.",
+    "POST /api/admin/study-material with class_level=12th and a second with class_level=''; GET /api/student/study-material (demo 12th) returns BOTH (class_level $or empty match).",
+    "POST /api/admin/notifications/broadcast audience='all_students' channels=['in_app','email','whatsapp'] → channels_mocked contains both 'email' and 'whatsapp' (no Resend/Twilio keys). recipients>=1, in-app rows inserted. GET /admin/notifications/history aggregates by broadcast_id (broadcast surfaces). GET /student/notifications returns the new title for demo.",
+    "Exam with batch_ids=[bz] but no demo in bz → does NOT appear in demo's GET /api/exams response (visibility filter respects batch_ids alongside class & assignment filters).",
+    "UI: 5 admin nav data-testids present; all 5 new pages render; share-dialog with copy/whatsapp/email/qr + inline QR <img>; New Exam dialog has exam-type-select + 3 mark-mode buttons + default-marks/default-negative; selecting 'No negative' disables default-negative input."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_v2_features.py",
+    "/app/test_reports/pytest/iter12_results.xml"
+  ],
+  "action_items": [
+    "MINOR: Rename data-testid 'admissions-call' to 'admissions-contact' on Landing.jsx line 82 to match v2 spec, OR update spec/tests to use 'admissions-call'.",
+    "OPTIONAL: routes_signup.py uses 'mobile' (Optional) but coerces .strip() at line 31 without None-guard via 'or '''' — currently safe because StudentSignupIn validates required mobile, but should be defensive if model changes.",
+    "OPTIONAL: routes_attendance.py line 21 sets `id: new_id()` inside $set during upsert — this overwrites id on every re-mark. Better: use $setOnInsert for the id field, $set for the mutable status/note fields.",
+    "OPTIONAL: routes_notifications.py audience='parents' is a no-op stub (line 31) — outbound dispatch still iterates students rather than parent_mobile/parent_email mapping. Currently MOCKED so no impact, but real implementation will need branching here.",
+    "OPTIONAL: routes_study.py student endpoint accepts query class_level but always overrides with student record's class_level — the query param is dead code (line 46)."
+  ],
+  "critical_code_review_comments": [
+    "routes_attendance.py mark_attendance: `id: new_id()` in $set causes id churn on every re-mark of the same (date, student). Use $setOnInsert for immutable fields.",
+    "routes_notifications.py: 'parents' audience branch is unimplemented — falls through to all students. Tests don't exercise this branch, but should be flagged before production.",
+    "routes_signup.py _username_from_mobile produces non-unique usernames if two mobiles share the trimmed-prefix pattern; an explicit unique-index on students.username would prevent races during concurrent signup.",
+    "routes_exams.py share_link: settings.website may be empty/None; current code falls back to relative URL only ('/login?join=...') — fine for in-app, but the WhatsApp/Email message text contains the relative link only, which won't be clickable in WhatsApp. Should default to REACT_APP_BACKEND_URL or institute_settings.website with a sane default.",
+    "routes_notifications.py broadcast for large audiences uses single insert_many for in-app notifications — OK for thousands but no chunking. For 50k+ students, consider chunked inserts.",
+    "Frontend: 'admissions-call' vs spec 'admissions-contact' — testid name mismatch."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12_v2_features.py",
+    "/app/test_reports/iteration_12.json"
+  ],
+  "success_rate": {"backend": "100% (13/13 iter12 pytests)", "frontend": "95% (all spec-required UI testids present except admissions-contact which is named admissions-call)"},
+  "test_credentials": "Admin admin@gyansai.com/admin123; Student demo/demo123 (class_level=12th). Read from /app/memory/test_credentials.md.",
+  "seed_data_creation": "Pytest module created (and cleaned up in module teardown): 2 TEST_iter12 batches, 1 TEST_Sharma teacher, 1 signup student (TEST_NewStudent), 3 TEST_iter12 exams (independent + clone + import target + share + batch-only), 1 attendance row for demo on today's date (NOT cleaned — intentional, contributes to my-stats), 2 study materials (TEST_iter12_Notes + Unscoped), 1 broadcast notification (TEST_iter12_Broadcast). All resources prefixed TEST_iter12_<ts> and best-effort cleaned via DELETE endpoints; broadcast notifications and attendance rows persist (no DELETE endpoints for those).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter12 v2 stack is solid: all new routers mounted under /api (batches, teachers, attendance, study, notifications, signup), independent-exam architecture (clone/import-from-bank/share) verified end-to-end. UI selectors confirmed: nav-teachers/batches/attendance/study-material/notifications on AdminLayout; signup-form on /signup; admissions-popup + admissions-enroll/demo/whatsapp/call on Landing; approve-signup-<id> on /admin/students; exam-share-<id> + share-dialog (share-copy/whatsapp/email/qr + inline QR) and exam-type-select/mark-mode-positive/custom/none/default-marks/default-negative on /admin/exams New Exam dialog. NOTE: spec used admissions-contact but code uses admissions-call. iter11 mini-cam regression NOT exercised in this run (no fresh student attempt was launched) — main agent should self-verify if needed. Test attendance row + broadcast notification persist in DB after this run; cleanup endpoints don't exist.",
+  "rca of the issue": "N/A — no failing tests. One spec/impl naming mismatch (admissions-call vs admissions-contact) flagged as LOW severity UI bug."
+}

@@ -49,20 +49,39 @@ class StudentIn(BaseModel):
     password: Optional[str] = "student123"
     email: Optional[str] = ""
     mobile: Optional[str] = ""
+    parent_mobile: Optional[str] = ""
+    school: Optional[str] = ""
     enrollment_no: Optional[str] = ""
     photo_url: Optional[str] = ""
     class_level: Optional[str] = ""  # "", "11th", "12th"
+    batch_id: Optional[str] = ""
+    signup_status: Optional[str] = "approved"  # approved | pending | rejected
 
 
 class StudentUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     mobile: Optional[str] = None
+    parent_mobile: Optional[str] = None
+    school: Optional[str] = None
     enrollment_no: Optional[str] = None
     photo_url: Optional[str] = None
     status: Optional[str] = None  # active | suspended
     password: Optional[str] = None
     class_level: Optional[str] = None
+    batch_id: Optional[str] = None
+    signup_status: Optional[str] = None
+
+
+class StudentSignupIn(BaseModel):
+    name: str
+    mobile: str
+    parent_mobile: Optional[str] = ""
+    email: Optional[str] = ""
+    password: str
+    class_level: str  # "11th" | "12th"
+    batch_id: Optional[str] = ""
+    school: Optional[str] = ""
 
 
 # ---------- Questions ----------
@@ -93,13 +112,19 @@ class QuestionIn(BaseModel):
 class ExamIn(BaseModel):
     name: str
     description: Optional[str] = ""
-    type: str = "mock"  # mock | full | chapter | weekly
+    type: str = "mock"  # legacy field — kept for back-compat
+    exam_type: Optional[str] = "mock"  # weekly | unit | chapter | mock | final
     exam_tag: Optional[str] = ""  # folder/category — e.g. JEE Mains, JEE Advanced, MHT-CET, NEET
     class_level: Optional[str] = ""  # "", "11th", "12th"
+    batch_ids: List[str] = Field(default_factory=list)
     duration_minutes: int = 60
     start_at: Optional[str] = None
     end_at: Optional[str] = None
     passing_marks: float = 0
+    total_marks: float = 0  # computed if 0
+    marking_mode: str = "custom"  # positive | custom | none
+    default_marks: float = 4.0   # per-question positive marks fallback
+    default_negative: float = 1.0  # per-question negative fallback
     instructions: Optional[str] = ""
     randomize: bool = False
     negative_marking: bool = True
@@ -234,6 +259,80 @@ class FolderExamIn(BaseModel):
     enable_webcam: bool = True
     negative_marking: bool = True
     randomize: bool = False
+
+
+# ---------- Batches ----------
+class BatchIn(BaseModel):
+    name: str  # e.g. "Batch A"
+    class_level: str  # "11th" | "12th"
+    description: Optional[str] = ""
+    schedule: Optional[str] = ""  # free text e.g. "Mon/Wed/Fri 6-8pm"
+    teacher_id: Optional[str] = ""
+
+
+# ---------- Teachers ----------
+class TeacherIn(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    mobile: Optional[str] = ""
+    subjects: List[str] = Field(default_factory=list)  # e.g. ["11th Math", "12th Math"]
+
+
+class TeacherLoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TeacherUpdate(BaseModel):
+    name: Optional[str] = None
+    mobile: Optional[str] = None
+    subjects: Optional[List[str]] = None
+    status: Optional[str] = None
+    password: Optional[str] = None
+
+
+# ---------- Attendance ----------
+class AttendanceMarkIn(BaseModel):
+    date: str  # YYYY-MM-DD
+    batch_id: Optional[str] = ""
+    class_level: Optional[str] = ""
+    entries: List[Dict[str, str]] = Field(default_factory=list)  # [{student_id, status: present|absent|late}]
+    note: Optional[str] = ""
+
+
+# ---------- Study Material ----------
+class StudyMaterialIn(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    type: str = "notes"  # notes | formula_sheet | assignment | video | chapter_note
+    class_level: Optional[str] = ""  # 11th | 12th
+    chapter: Optional[str] = ""
+    file_url: Optional[str] = ""  # external URL (S3/Drive/YouTube)
+    is_published: bool = True
+
+
+# ---------- Notifications ----------
+class NotificationBroadcastIn(BaseModel):
+    title: str
+    message: str
+    audience: str = "all_students"  # all_students | class_11 | class_12 | batch | parents
+    batch_id: Optional[str] = ""
+    channels: List[str] = Field(default_factory=lambda: ["in_app"])  # in_app | email | sms | whatsapp
+
+
+# ---------- Independent Exam Helpers (Copy / Import) ----------
+class ExamCloneIn(BaseModel):
+    source_exam_id: str
+    new_name: str
+
+
+class ExamImportBankIn(BaseModel):
+    exam_id: str
+    question_ids: List[str] = Field(default_factory=list)
+    chapter: Optional[str] = None  # optional: pull all questions matching chapter+class
+    class_level: Optional[str] = None
+
     is_published: bool = True
     instructions: Optional[str] = "Read each question carefully."
     question_ids: List[str] = Field(default_factory=list)

@@ -17,7 +17,7 @@ api.interceptors.response.use(
   (err) => {
     if (err?.response?.status === 401) {
       const path = window.location.pathname;
-      if (!path.startsWith("/login") && !path.startsWith("/r/")) {
+      if (!path.startsWith("/login") && !path.startsWith("/signup") && !path.startsWith("/r/") && path !== "/") {
         logout();
         window.location.href = "/login";
       }

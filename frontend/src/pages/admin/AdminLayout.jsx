@@ -5,14 +5,20 @@ import { Button } from "@/components/ui/button";
 import MobileNavBar from "@/components/MobileNavBar";
 import {
   LayoutDashboard, Users, FileQuestion, GraduationCap,
-  BookOpen, ListChecks, Settings, LogOut, Calculator, ClipboardCheck, FileBarChart, IndianRupee
+  BookOpen, ListChecks, Settings, LogOut, Calculator, ClipboardCheck, FileBarChart, IndianRupee,
+  Layers, UserCog, CalendarCheck, Bell, FileText
 } from "lucide-react";
 
 const NAV = [
   { to: "/admin", label: "Dashboard", Icon: LayoutDashboard, end: true, id: "nav-dashboard" },
   { to: "/admin/students", label: "Students", Icon: Users, id: "nav-students" },
+  { to: "/admin/teachers", label: "Teachers", Icon: UserCog, id: "nav-teachers" },
+  { to: "/admin/batches", label: "Batches", Icon: Layers, id: "nav-batches" },
   { to: "/admin/questions", label: "Question Bank", Icon: FileQuestion, id: "nav-questions" },
   { to: "/admin/exams", label: "Exams", Icon: GraduationCap, id: "nav-exams" },
+  { to: "/admin/attendance", label: "Attendance", Icon: CalendarCheck, id: "nav-attendance" },
+  { to: "/admin/study-material", label: "Study Material", Icon: FileText, id: "nav-study-material" },
+  { to: "/admin/notifications", label: "Notifications", Icon: Bell, id: "nav-notifications" },
   { to: "/admin/results", label: "Results & Recording", Icon: FileBarChart, id: "nav-results" },
   { to: "/admin/evaluation", label: "Evaluation", Icon: ClipboardCheck, id: "nav-evaluation" },
   { to: "/admin/payments", label: "Payments", Icon: IndianRupee, id: "nav-payments" },

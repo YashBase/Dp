@@ -34,6 +34,14 @@ async def public_test_series():
     return await db.test_series.find({"is_published": True}, {"_id": 0}).limit(12).to_list(12)
 
 
+@router.get("/batches")
+async def public_batches():
+    """Public batch list — used on Signup page so prospective students can pick a batch."""
+    rows = await db.batches.find({}, {"_id": 0, "id": 1, "name": 1, "class_level": 1, "schedule": 1}).sort("class_level", 1).to_list(100)
+    return rows
+
+
+
 # ---------- Parent-accessible result + recording ----------
 async def public_result_full(attempt_id: str):
     a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})

@@ -23,6 +23,10 @@ async def student_login(data: StudentLoginIn):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     if student.get("status") == "suspended":
         raise HTTPException(status_code=403, detail="Account suspended. Contact admin.")
+    if student.get("signup_status") == "pending":
+        raise HTTPException(status_code=403, detail="Account pending admin approval. Please try again after approval.")
+    if student.get("signup_status") == "rejected":
+        raise HTTPException(status_code=403, detail="Signup was rejected. Contact admin.")
     token = create_token(student["id"], "student")
     clean_doc(student)
     return {"token": token, "user": student, "role": "student"}

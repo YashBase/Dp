@@ -170,9 +170,17 @@ export default function Students() {
                 <td className="px-4 py-2.5">{s.email}</td>
                 <td className="px-4 py-2.5 mono">{s.enrollment_no}</td>
                 <td className="px-4 py-2.5">
-                  <Badge variant={s.status === "active" ? "default" : "destructive"} className="rounded-sm cursor-pointer" onClick={() => toggleStatus(s)} data-testid={`status-toggle-${s.id}`}>
-                    {s.status}
-                  </Badge>
+                  <div className="flex flex-col gap-1">
+                    <Badge variant={s.status === "active" ? "default" : "destructive"} className="rounded-sm cursor-pointer" onClick={() => toggleStatus(s)} data-testid={`status-toggle-${s.id}`}>
+                      {s.status}
+                    </Badge>
+                    {s.signup_status === "pending" && (
+                      <Badge variant="secondary" className="rounded-sm mono text-[10px] cursor-pointer hover:bg-primary hover:text-primary-foreground" data-testid={`approve-signup-${s.id}`}
+                             onClick={async () => { await api.put(`/admin/students/${s.id}`, { signup_status: "approved" }); load(); }}>
+                        APPROVE SIGNUP →
+                      </Badge>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex gap-1">
