@@ -307,7 +307,18 @@ async def store_snapshot(data: SnapshotIn, student=Depends(require_student)):
         "image_base64": b64,
     }
     await db.proctor_snapshots.insert_one(snap)
-    if data.violation:
+    if data.violation == "baseline":
+        # Reset started_at ONLY on the first baseline (never resets on reload).
+        # Prevents students from refreshing mid-exam to gain extra time.
+        prior_baselines = await db.proctor_snapshots.count_documents({
+            "attempt_id": data.attempt_id, "violation": "baseline"
+        })
+        if prior_baselines <= 1:
+            await db.attempts.update_one(
+                {"id": data.attempt_id},
+                {"$set": {"started_at": iso(now_utc())}},
+            )
+    elif data.violation:
         await db.attempts.update_one(
             {"id": data.attempt_id},
             {"$push": {"violations": {"id": new_id(), "type": data.violation, "at": iso(now_utc())}}},

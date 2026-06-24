@@ -38,6 +38,7 @@ export default function Landing() {
             <a href="#contact" className="hover:text-primary transition-colors" data-testid="nav-contact">Contact</a>
           </nav>
           <div className="flex gap-2 shrink-0">
+            <Link to="/login"><Button variant="outline" size="sm" className="rounded-sm" data-testid="nav-login-btn">Sing Up</Button></Link>
             <Link to="/login"><Button variant="outline" size="sm" className="rounded-sm" data-testid="nav-login-btn">Login</Button></Link>
             <Link to="/login?role=admin"><Button size="sm" className="rounded-sm hidden sm:inline-flex" data-testid="nav-admin-btn">Admin</Button></Link>
           </div>

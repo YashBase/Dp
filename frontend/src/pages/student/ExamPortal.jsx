@@ -140,22 +140,38 @@ export default function ExamPortal() {
       const b64 = c.toDataURL("image/jpeg", 0.6).split(",")[1];
       await api.post("/exams/snapshot", { attempt_id: attemptId, image_base64: b64, violation: "baseline" });
 
+      // Reset the timer to full duration — baseline upload also resets server's
+      // started_at so the clock starts fresh now (fixes premature auto-submit
+      // when proctor init took longer than the remaining window).
+      setTimeLeft((attempt.duration_minutes || 60) * 60);
+
       // All good — schedule regular snapshots + start chunked recording
       snapTimerRef.current = setInterval(() => captureSnapshot(), 30000);
       recordingActiveRef.current = true;
       startRecorderCycle();
-      // Watchdog: every 5s, if recording is supposed to be active but recorder is dead, restart it.
-      watchdogRef.current = setInterval(() => {
+      // Watchdog: every 5s, if recording is supposed to be active but recorder
+      // is dead, restart it. If the stream itself died, try to re-acquire.
+      watchdogRef.current = setInterval(async () => {
         if (!recordingActiveRef.current) return;
         const live = streamRef.current?.getTracks().some((t) => t.readyState === "live");
         if (!live) {
           setRecState("error");
+          // Try to re-acquire stream once
+          try {
+            const ns = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 480 }, height: { ideal: 360 }, facingMode: "user" },
+              audio: true,
+            });
+            streamRef.current = ns;
+            if (videoRef.current) { videoRef.current.srcObject = ns; videoRef.current.play().catch(() => {}); }
+            if (miniVideoRef.current) { miniVideoRef.current.srcObject = ns; miniVideoRef.current.play().catch(() => {}); }
+            startRecorderCycle();
+          } catch (_) { /* still no access — watchdog will retry */ }
           return;
         }
         const st = recorderRef.current?.state;
         if (st !== "recording") {
-          // restart the chunk cycle
-          try { recorderRef.current?.stop(); } catch (_) {}
+          try { recorderRef.current?.stop(); } catch (_) { /* ignore */ }
           startRecorderCycle();
         }
       }, 5000);
