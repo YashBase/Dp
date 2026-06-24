@@ -76,6 +76,15 @@ Build a complete production-ready SaaS Online Examination & LMS for an Indian II
 - **Quick-Assign Exam Wizard** — new button (`quick-assign-btn`) in Question Bank header opens "Folder → Class → Exam" dialog. Picks a folder + class (11th/12th) + tag (JEE Mains/Adv/MHT-CET/NEET) + exam name → backend `POST /api/questions/quick-assign-exam` creates an exam with ALL questions in that folder and auto-assigns it to every active student of that class. Returns `{exam, questions_count, assigned_count}`.
 - Tested via `/app/test_reports/iteration_9.json` — 8/8 backend pytest + all UI selectors verified, including class-filter exclusion (11th student doesn't see a 12th-only auto-exam).
 
+## Recent Changes (2026-06-24, late) — Public Exam Share-Link Join (Iter 13)
+- **Share link is now public-friendly** — `POST /api/exams/{id}/share` returns `/exam/{id}` (was `/login?join=…`).
+- **New public route `/exam/:examId`** (PublicExamJoin) — accessible without login. Shows exam name, duration, question count, instructions, marking summary. Two CTAs:
+  - **Quick Join** — name + mobile (+ optional email/parent/password/class) → `POST /api/public/exam/{id}/join` auto-creates a student (`signup_status='approved'`, `signup_mode='guest_link'`), grants exam, returns auth token. Auto-generated password (last 6 of mobile) is shown in a persistent **credentials card** for the user to save before continuing.
+  - **Already a student** — `/login?next=/exam/{id}` → Login.jsx now honors `next` param.
+- Idempotent re-join: same mobile returns existing student (no duplicate).
+- **Route rename fix** — student attempt portal moved from `/exam/:attemptId` → `/attempt/:attemptId` to avoid shadowing the new public path. Single navigation site (`student/Exams.jsx`) updated.
+- Backend pytest: **8/8** + UI end-to-end verified (`/app/test_reports/iteration_13.json`).
+
 ## Recent Changes (2026-06-24) — V2 Spec Wave (Iter 12)
 Implemented & verified (13/13 backend pytests + UI):
 - **Batches** — model, CRUD (`/api/batches`), admin UI; assigning a batch to an exam restricts visibility on the student side.

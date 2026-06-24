@@ -95,7 +95,7 @@ function App() {
             </Route>
 
             <Route
-              path="/exam/:attemptId"
+              path="/attempt/:attemptId"
               element={<Protected role="student"><ExamPortal /></Protected>}
             />
 

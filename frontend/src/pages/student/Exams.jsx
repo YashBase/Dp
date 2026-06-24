@@ -15,7 +15,7 @@ export default function Exams() {
   const start = async (e) => {
     try {
       const { data } = await api.post("/exams/start", { exam_id: e.id });
-      nav(`/exam/${data.id}`);
+      nav(`/attempt/${data.id}`);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Couldn't start exam");
     }

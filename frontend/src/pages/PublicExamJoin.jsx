@@ -33,6 +33,8 @@ export default function PublicExamJoin() {
     }
   }, []);
 
+  const [creds, setCreds] = useState(null);
+
   const submitJoin = async (e) => {
     e?.preventDefault?.();
     if (!form.name.trim() || !form.mobile.trim()) return toast.error("Name and mobile required");
@@ -40,13 +42,15 @@ export default function PublicExamJoin() {
     try {
       const { data } = await api.post(`/public/exam/${examId}/join`, form);
       setAuth(data);
-      const creds = data.credentials;
-      if (creds && creds.password) {
-        toast.success(`Joined! Save your login: ${creds.username} / ${creds.password}`);
+      const c = data.credentials;
+      if (c && c.password) {
+        setCreds(c);
+        setJoinOpen(false);
+        toast.success("Account created — save your login below!");
       } else {
         toast.success("Welcome back — exam unlocked.");
+        nav("/app/exams");
       }
-      nav("/app/exams");
     } catch (er) {
       toast.error(er?.response?.data?.detail || "Could not join");
     } finally { setSubmitting(false); }
@@ -103,6 +107,29 @@ export default function PublicExamJoin() {
             <LogIn className="w-4 h-4 mr-1.5" /> Already a student? Log in
           </Button></Link>
         </div>
+
+        {creds && (
+          <div className="grid-card p-5 border-2 border-primary" data-testid="creds-card">
+            <h3 className="heading font-semibold flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-primary" /> Save your login</h3>
+            <p className="text-xs text-muted-foreground mt-1">Write down or screenshot these credentials — you'll need them to log back in later.</p>
+            <div className="grid grid-cols-2 gap-2 mt-3 mono text-sm">
+              <div className="border border-border rounded-sm p-2 bg-muted/30">
+                <div className="overline text-[9px]">Username</div>
+                <div className="font-bold" data-testid="creds-username">{creds.username}</div>
+              </div>
+              <div className="border border-border rounded-sm p-2 bg-muted/30">
+                <div className="overline text-[9px]">Password</div>
+                <div className="font-bold" data-testid="creds-password">{creds.password}</div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <Button onClick={() => { navigator.clipboard.writeText(`${creds.username} / ${creds.password}`); toast.success("Credentials copied"); }} variant="outline" className="rounded-sm" data-testid="creds-copy">Copy</Button>
+              <Button onClick={() => nav("/app/exams")} className="rounded-sm flex-1" data-testid="creds-proceed">
+                Continue to Exam <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="text-[11px] text-muted-foreground mono">
           By joining you agree to webcam &amp; microphone monitoring during the exam.
