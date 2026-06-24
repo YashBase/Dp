@@ -26,12 +26,16 @@ export default function PublicExamJoin() {
       .catch((e) => setErr(e?.response?.data?.detail || "Exam link is invalid or has expired."));
   }, [examId]);
 
-  // If the user is already logged in as a student, auto-route them to exams
+  // If the user is already logged in as a student, auto-claim the exam and route to attempts.
   useEffect(() => {
-    if (isAuthed() && getRole() === "student") {
-      // Add exam access via guest endpoint as well (idempotent)
-    }
-  }, []);
+    if (!isAuthed() || getRole() !== "student") return;
+    api.post(`/exams/${examId}/claim`)
+      .then(() => {
+        toast.success("Exam unlocked — opening your exams…");
+        nav("/app/exams");
+      })
+      .catch((er) => toast.error(er?.response?.data?.detail || "Could not unlock exam"));
+  }, [examId]);
 
   const [creds, setCreds] = useState(null);
 
@@ -99,14 +103,21 @@ export default function PublicExamJoin() {
           <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">{exam.instructions || "Please read each question carefully and answer to the best of your ability."}</p>
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-3" data-testid="join-actions">
+        <div className="grid sm:grid-cols-3 gap-3" data-testid="join-actions">
           <Button size="lg" className="rounded-sm" onClick={() => setJoinOpen(true)} data-testid="quick-join-btn">
-            <UserPlus className="w-4 h-4 mr-1.5" /> Quick Join (name + mobile)
+            <UserPlus className="w-4 h-4 mr-1.5" /> Quick Join
           </Button>
           <Link to={`/login?next=${encodeURIComponent(`/exam/${examId}`)}`}><Button size="lg" variant="outline" className="rounded-sm w-full" data-testid="login-join-btn">
-            <LogIn className="w-4 h-4 mr-1.5" /> Already a student? Log in
+            <LogIn className="w-4 h-4 mr-1.5" /> Log In
+          </Button></Link>
+          <Link to={`/signup?next=${encodeURIComponent(`/exam/${examId}`)}`}><Button size="lg" variant="outline" className="rounded-sm w-full" data-testid="signup-join-btn">
+            <UserPlus className="w-4 h-4 mr-1.5" /> Sign Up
           </Button></Link>
         </div>
+        <p className="text-[11px] text-muted-foreground mono">
+          Quick Join: instant guest account with auto-set password (great for one-time exams).
+          Log In / Sign Up: full Gyansai account (tracked progress, certificates, parent reports).
+        </p>
 
         {creds && (
           <div className="grid-card p-5 border-2 border-primary" data-testid="creds-card">

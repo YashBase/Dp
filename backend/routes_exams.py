@@ -227,6 +227,23 @@ async def delete_exam(exam_id: str, _admin=Depends(require_admin)):
     return {"ok": True}
 
 
+@router.post("/{exam_id}/claim")
+async def claim_exam(exam_id: str, user=Depends(get_current_user)):
+    """Student-side: grant this published exam to the currently logged-in student.
+    Used by the public share-link flow when a logged-in student lands on /exam/<id>."""
+    if user.get("role") != "student":
+        raise HTTPException(status_code=403, detail="Only students can claim exams")
+    exam = await db.exams.find_one({"id": exam_id}, {"_id": 0})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if not exam.get("is_published"):
+        raise HTTPException(status_code=403, detail="Exam is not currently open")
+    await db.students.update_one({"id": user["id"]}, {"$addToSet": {"exam_ids": exam_id}})
+    await db.exams.update_one({"id": exam_id}, {"$addToSet": {"assigned_student_ids": user["id"]}})
+    return {"ok": True, "exam_id": exam_id}
+
+
+
 # ---------- Student: Attempt flow ----------
 @router.post("/start")
 async def start_attempt(data: StartAttemptIn, student=Depends(require_student)):

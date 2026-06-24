@@ -13,7 +13,7 @@ def _username_from_mobile(mobile: str) -> str:
 @router.post("/signup")
 async def student_signup(data: StudentSignupIn):
     settings = await db.settings.find_one({}, {"_id": 0}) or {}
-    auto = bool(settings.get("auto_approve_signups", False))
+    auto = bool(settings.get("auto_approve_signups", False)) or bool(data.from_share_link)
 
     if data.class_level not in ("11th", "12th"):
         raise HTTPException(status_code=400, detail="class_level must be 11th or 12th")
@@ -39,10 +39,15 @@ async def student_signup(data: StudentSignupIn):
         "signup_status": "approved" if auto else "pending",
         "signup_mode": "auto" if auto else "manual",
         "course_ids": [],
-        "exam_ids": [],
+        "exam_ids": [data.target_exam_id] if data.target_exam_id else [],
         "created_at": iso(now_utc()),
     }
     await db.students.insert_one(doc)
+    if data.target_exam_id:
+        await db.exams.update_one(
+            {"id": data.target_exam_id},
+            {"$addToSet": {"assigned_student_ids": doc["id"]}},
+        )
     await db.activities.insert_one({
         "id": new_id(),
         "type": "student_signup",

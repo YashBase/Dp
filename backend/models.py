@@ -82,6 +82,8 @@ class StudentSignupIn(BaseModel):
     class_level: str  # "11th" | "12th"
     batch_id: Optional[str] = ""
     school: Optional[str] = ""
+    from_share_link: Optional[bool] = False  # if true, bypass admin approval gate
+    target_exam_id: Optional[str] = ""  # auto-grant this exam after signup
 
 
 # ---------- Questions ----------
