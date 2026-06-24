@@ -8,6 +8,7 @@ const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
 const Signup = lazy(() => import("@/pages/Signup"));
 const PublicResult = lazy(() => import("@/pages/PublicResult"));
+const PublicExamJoin = lazy(() => import("@/pages/PublicExamJoin"));
 
 const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
@@ -55,6 +56,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/r/:attemptId" element={<PublicResult />} />
+            <Route path="/exam/:examId" element={<PublicExamJoin />} />
 
             <Route
               path="/admin"

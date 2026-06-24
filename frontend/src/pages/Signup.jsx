@@ -26,9 +26,8 @@ export default function Signup() {
       const { data } = await api.post("/auth/signup", form);
       if (data.auto_approved) {
         // Auto-login (settings.auto_approve_signups = true)
-        const { setToken, setUser } = await import("@/lib/auth");
-        setToken(data.token);
-        setUser(data.user, "student");
+        const { setAuth } = await import("@/lib/auth");
+        setAuth(data);
         toast.success("Welcome! Logged in.");
         nav("/app");
       } else {

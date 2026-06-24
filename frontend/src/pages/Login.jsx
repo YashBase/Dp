@@ -25,6 +25,8 @@ export default function Login() {
       const { data } = await api.post(url, body);
       setAuth(data);
       toast.success(`Welcome, ${data.user.name}`);
+      const next = sp.get("next");
+      if (next && next.startsWith("/")) { nav(next); return; }
       nav(kind === "admin" ? "/admin" : "/app");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Login failed");

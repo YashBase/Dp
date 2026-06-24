@@ -209,7 +209,7 @@ async def share_link(exam_id: str, _admin=Depends(require_admin)):
     settings = await db.settings.find_one({}, {"_id": 0}) or {}
     import os as _os
     base = (settings.get("website") or _os.environ.get("FRONTEND_URL") or "").rstrip("/")
-    relative = f"/login?join={exam_id}"
+    relative = f"/exam/{exam_id}"
     full_url = (base + relative) if base else relative
     msg = (
         f"You're invited to attempt *{exam.get('name')}* on Gyansai Maths Test Portal. "

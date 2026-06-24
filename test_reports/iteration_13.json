@@ -1,0 +1,44 @@
+{
+  "summary": "iter13 PUBLIC exam share-link join — backend 8/8 PASS, frontend public landing + Quick Join + login-redirect verified. Discovered ONE CRITICAL route-conflict regression: the new public route /exam/:examId shadows the existing student attempt route /exam/:attemptId (App.js lines 59 vs 98), breaking the entire exam-taking flow for every student (guest or otherwise) after they click Start.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Student starts an exam attempt (/app/exams → click Start)",
+        "issue": "Exams.jsx navigates to `/exam/${attemptId}` (line 18), but App.js now has /exam/:examId → PublicExamJoin registered BEFORE /exam/:attemptId → ExamPortal (App.js L59 vs L98). React Router matches the first route, so the ExamPortal NEVER renders — instead PublicExamJoin loads, calls GET /api/public/exam/<attemptId> which 404s, and shows the 'Link unavailable' card. Reproduced via API: POST /exams/start returns attemptId, GET /public/exam/<attemptId> → 404. This breaks the new guest's exam-attempt flow AND every existing student's exam flow.",
+        "affected_selectors": ["App.js Routes", "ExamPortal", "PublicExamJoin", "/app/exams Start button"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "PublicExamJoin Quick Join dialog",
+        "issues": ["React warns: 'Missing Description or aria-describedby for DialogContent' — add a DialogDescription for a11y."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_public_exam_join.py",
+    "/app/test_reports/pytest/iter13_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Resolve /exam/:examId vs /exam/:attemptId route conflict. Recommended: rename the student exam-portal route to something distinct like /attempt/:attemptId or /exam-portal/:attemptId, and update /app/frontend/src/pages/student/Exams.jsx line 18 (`nav('/exam/${data.id}')`) accordingly. Also update any other ExamPortal navigations (e.g. resume buttons). Keep /exam/:examId for the new public share-link landing.",
+    "Add a <DialogDescription> inside PublicExamJoin's <DialogContent> to silence the Radix a11y warning.",
+    "Optional: surface auto-generated guest credentials in a persistent UI element (modal/banner) instead of relying solely on a toast — toasts disappear in ~5s and the guest may not catch them."
+  ],
+  "critical_code_review_comments": [
+    "App.js route ordering: /exam/:examId (PublicExamJoin, public) registered before /exam/:attemptId (ExamPortal, protected) — same pattern, first wins → ExamPortal is dead code via this URL. MUST fix.",
+    "routes_public.py public_exam_join: when re-joining (existing student branch) the response 'credentials.password' is set to None — frontend handles this (toast shows 'Welcome back'). However, the existing branch never pops 'password_hash' if it wasn't set (it pops only after the insert branch); double-check: line 139 `student.pop('password_hash', None)` runs in BOTH branches so it's OK.",
+    "PublicExamJoin.jsx: the second useEffect (lines 30–34) is a no-op TODO ('Add exam access via guest endpoint as well') — if a logged-in student already opens the share link, the exam is NOT auto-added to their account. Consider calling the join endpoint with the existing token/mobile, or just hide Quick Join and show a 'Go to exams' CTA.",
+    "Username scheme g+mobile is predictable (login enumerable). Acceptable for guest-mode but document/lock in.",
+    "Toast displays the auto-generated password once — if the user misses the toast they cannot log in again. Show it in a copyable card on the destination page or email it."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter13_public_exam_join.py"],
+  "success_rate": { "backend": "100%", "frontend": "75% (landing + Quick Join + redirect work; downstream exam-attempt navigation broken)" },
+  "test_credentials": "admin@gyansai.com / admin123; demo / demo123 (student)",
+  "seed_data_creation": "Created TEST_iter13_* guest students via /public/exam/<jee>/join with auto-generated mobiles (9xxxxxxxxx). Created one in-progress attempt on the 'jee' exam for the route-shadow repro. Safe to delete via /admin/students filtered by 'TEST_iter13_' and /admin/attempts.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend public exam-join is solid (8/8 pytest). The remaining work is on the frontend: after main agent renames the protected ExamPortal route, retest: 1) start an attempt as the new guest → should land on ExamPortal (not PublicExamJoin), 2) login-join-btn → /login?next=/exam/<id>, login, get bounced back to /exam/<id>, 3) regression — admin Share dialog QR uses /exam/<id>. Use exam id 562bc01a-b273-4f2b-a362-de6c63f760d1 ('jee').",
+  "rca of the issue": "Bug: /exam/:examId (new public landing) and /exam/:attemptId (existing student attempt portal) are registered with the same URL pattern in App.js. React Router v6 matches in order — line 59 wins — so navigation to /exam/<any-uuid> from Exams.jsx after `POST /exams/start` always renders PublicExamJoin instead of ExamPortal. PublicExamJoin then queries /api/public/exam/<attemptId>, which 404s (it's an attempt id, not an exam id), showing 'Link unavailable'. Reproduced end-to-end via REST. Mitigation: pick distinct paths — keep /exam/:examId public, move attempt portal to /attempt/:attemptId (or /exam-portal/:attemptId), and update the single navigation site in Exams.jsx (line 18)."
+}

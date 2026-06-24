@@ -42,6 +42,112 @@ async def public_batches():
 
 
 
+# ---------- Public exam join (share-link guest access) ----------
+@router.get("/exam/{exam_id}")
+async def public_exam_preview(exam_id: str):
+    """Public preview of an exam — used by the share landing page."""
+    e = await db.exams.find_one(
+        {"id": exam_id, "is_published": True},
+        {"_id": 0, "question_ids": 0, "assigned_student_ids": 0, "batch_ids": 0},
+    )
+    if not e:
+        raise HTTPException(status_code=404, detail="Exam not available")
+    # Add question count without exposing the actual question_ids
+    full = await db.exams.find_one({"id": exam_id}, {"question_ids": 1})
+    e["question_count"] = len(full.get("question_ids") or [])
+    return e
+
+
+@router.post("/exam/{exam_id}/join")
+async def public_exam_join(exam_id: str, payload: dict):
+    """Guest quick-join — creates a student (auto-approved) and grants them this exam.
+    Body: {name, mobile, email?, password?, parent_mobile?, class_level?}.
+    Returns: {token, user, role, exam_id} so the frontend can immediately route to /app."""
+    from core import hash_password, create_token, new_id, now_utc, iso
+
+    exam = await db.exams.find_one({"id": exam_id}, {"_id": 0})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if not exam.get("is_published"):
+        raise HTTPException(status_code=403, detail="Exam is not currently open")
+
+    name = (payload.get("name") or "").strip()
+    mobile = (payload.get("mobile") or "").strip()
+    if not name or not mobile:
+        raise HTTPException(status_code=400, detail="Name and mobile are required")
+
+    password = (payload.get("password") or "").strip() or (mobile[-6:] if len(mobile) >= 6 else "guest1234")
+
+    # Re-use existing account by mobile if found, else create a new "approved" student.
+    existing = await db.students.find_one({"mobile": mobile})
+    if existing:
+        # Update class_level if absent, append the exam id
+        upd = {"$addToSet": {"exam_ids": exam_id}}
+        new_class = (payload.get("class_level") or "").strip()
+        sets = {}
+        if not existing.get("class_level") and new_class:
+            sets["class_level"] = new_class
+        if not existing.get("email") and payload.get("email"):
+            sets["email"] = (payload.get("email") or "").lower()
+        if not existing.get("parent_mobile") and payload.get("parent_mobile"):
+            sets["parent_mobile"] = payload.get("parent_mobile") or ""
+        if sets:
+            upd["$set"] = sets
+        await db.students.update_one({"id": existing["id"]}, upd)
+        student = await db.students.find_one({"id": existing["id"]}, {"_id": 0})
+    else:
+        sid = new_id()
+        username = ("g" + mobile.lstrip("+").replace(" ", ""))[:20]
+        # Make username unique if collision
+        if await db.students.find_one({"username": username}):
+            username = (username + new_id()[:4])[:24]
+        student = {
+            "id": sid,
+            "name": name,
+            "username": username,
+            "password_hash": hash_password(password),
+            "email": (payload.get("email") or "").lower(),
+            "mobile": mobile,
+            "parent_mobile": (payload.get("parent_mobile") or "").strip(),
+            "school": (payload.get("school") or "").strip(),
+            "enrollment_no": "",
+            "photo_url": "",
+            "class_level": (payload.get("class_level") or exam.get("class_level") or "").strip(),
+            "batch_id": "",
+            "signup_status": "approved",
+            "signup_mode": "guest_link",
+            "status": "active",
+            "course_ids": [],
+            "exam_ids": [exam_id],
+            "created_at": iso(now_utc()),
+        }
+        await db.students.insert_one(student)
+        await db.activities.insert_one({
+            "id": new_id(),
+            "type": "guest_exam_join",
+            "text": f"Guest '{name}' ({mobile}) joined via share link → '{exam.get('name')}'",
+            "created_at": iso(now_utc()),
+        })
+        student.pop("_id", None)
+        student.pop("password_hash", None)
+
+    # Always grant access to this specific exam (idempotent via $addToSet)
+    await db.students.update_one({"id": student["id"]}, {"$addToSet": {"exam_ids": exam_id}})
+    # Also append the student id to the exam's assigned_student_ids so list_exams returns it on first call
+    await db.exams.update_one({"id": exam_id}, {"$addToSet": {"assigned_student_ids": student["id"]}})
+
+    student.pop("password_hash", None)
+    token = create_token(student["id"], "student")
+    return {
+        "token": token,
+        "user": student,
+        "role": "student",
+        "exam_id": exam_id,
+        "credentials": {"username": student["username"], "password": password if not existing else None},
+    }
+
+
+
 # ---------- Parent-accessible result + recording ----------
 async def public_result_full(attempt_id: str):
     a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
