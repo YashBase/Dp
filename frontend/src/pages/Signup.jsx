@@ -12,7 +12,7 @@ export default function Signup() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
   const next = sp.get("next") || "";
-  const [form, setForm] = useState({ name: "", mobile: "", parent_mobile: "", email: "", password: "", class_level: "11th", batch_id: "", school: "" });
+  const [form, setForm] = useState({ name: "", username: "", mobile: "", parent_mobile: "", email: "", password: "", class_level: "11th", batch_id: "", school: "" });
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -83,6 +83,18 @@ export default function Signup() {
         </div>
         <form onSubmit={submit} className="grid-card p-6 space-y-3" data-testid="signup-form">
           <div><Label>Full Name *</Label><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="signup-name" /></div>
+          <div>
+            <Label>Username (optional)</Label>
+            <Input
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, "") })}
+              placeholder="auto from mobile if blank"
+              minLength={3}
+              maxLength={24}
+              data-testid="signup-username"
+            />
+            <p className="text-[10px] text-muted-foreground mono mt-0.5">3-24 chars: lowercase letters, digits, dot or underscore. Leave blank to auto-generate from mobile.</p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Mobile *</Label><Input required value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="10-digit" data-testid="signup-mobile" /></div>
             <div><Label>Parent Mobile</Label><Input value={form.parent_mobile} onChange={(e) => setForm({ ...form, parent_mobile: e.target.value })} data-testid="signup-parent-mobile" /></div>

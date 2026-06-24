@@ -76,14 +76,15 @@ class StudentUpdate(BaseModel):
 class StudentSignupIn(BaseModel):
     name: str
     mobile: str
+    username: Optional[str] = ""  # student-chosen; falls back to "u<mobile>" if blank
     parent_mobile: Optional[str] = ""
     email: Optional[str] = ""
     password: str
     class_level: str  # "11th" | "12th"
     batch_id: Optional[str] = ""
     school: Optional[str] = ""
-    from_share_link: Optional[bool] = False  # if true, bypass admin approval gate
-    target_exam_id: Optional[str] = ""  # auto-grant this exam after signup
+    from_share_link: Optional[bool] = False
+    target_exam_id: Optional[str] = ""
 
 
 # ---------- Questions ----------

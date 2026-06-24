@@ -17,10 +17,22 @@ async def student_signup(data: StudentSignupIn):
 
     if data.class_level not in ("11th", "12th"):
         raise HTTPException(status_code=400, detail="class_level must be 11th or 12th")
-    username = _username_from_mobile(data.mobile)
+
+    # Username: student-chosen wins; otherwise default to "u<mobile>".
+    requested = (data.username or "").strip().lower()
+    import re as _re
+    if requested:
+        if not _re.fullmatch(r"[a-z0-9_.]{3,24}", requested):
+            raise HTTPException(status_code=400, detail="Username must be 3-24 chars: lowercase letters, digits, dot or underscore")
+        if await db.students.find_one({"username": requested}):
+            raise HTTPException(status_code=409, detail="Username already taken — please choose another")
+        username = requested
+    else:
+        username = _username_from_mobile(data.mobile)
+
     existing = await db.students.find_one({"$or": [{"mobile": data.mobile}, {"username": username}]})
     if existing:
-        raise HTTPException(status_code=409, detail="An account with this mobile already exists. Please log in.")
+        raise HTTPException(status_code=409, detail="An account with this mobile/username already exists. Please log in.")
 
     doc = {
         "id": new_id(),
