@@ -79,7 +79,7 @@ export default function Landing() {
               <Link to="/signup"><Button className="w-full rounded-sm" data-testid="admissions-enroll"><GraduationCap className="w-4 h-4 mr-1" /> Enroll Now</Button></Link>
               <Link to="/signup"><Button variant="outline" className="w-full rounded-sm" data-testid="admissions-demo">Free Demo</Button></Link>
               <a href={waLink} target="_blank" rel="noreferrer"><Button variant="outline" className="w-full rounded-sm" data-testid="admissions-whatsapp"><MessageSquare className="w-4 h-4 mr-1" /> WhatsApp</Button></a>
-              <a href={`tel:${inst.contact_number || ""}`}><Button variant="outline" className="w-full rounded-sm" data-testid="admissions-call"><Phone className="w-4 h-4 mr-1" /> Contact Us</Button></a>
+              <a href={`tel:${inst.contact_number || ""}`}><Button variant="outline" className="w-full rounded-sm" data-testid="admissions-contact"><Phone className="w-4 h-4 mr-1" /> Contact Us</Button></a>
             </div>
             <button onClick={() => setAdmissionsOpen(false)} className="text-[10px] mono text-muted-foreground hover:text-foreground w-full text-center pt-1" data-testid="admissions-close"><X className="w-3 h-3 inline mr-1" /> dismiss (24h)</button>
           </div>

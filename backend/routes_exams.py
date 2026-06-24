@@ -207,7 +207,8 @@ async def share_link(exam_id: str, _admin=Depends(require_admin)):
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
     settings = await db.settings.find_one({}, {"_id": 0}) or {}
-    base = (settings.get("website") or "").rstrip("/") or ""
+    import os as _os
+    base = (settings.get("website") or _os.environ.get("FRONTEND_URL") or "").rstrip("/")
     relative = f"/login?join={exam_id}"
     full_url = (base + relative) if base else relative
     msg = (

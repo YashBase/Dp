@@ -76,6 +76,36 @@ Build a complete production-ready SaaS Online Examination & LMS for an Indian II
 - **Quick-Assign Exam Wizard** — new button (`quick-assign-btn`) in Question Bank header opens "Folder → Class → Exam" dialog. Picks a folder + class (11th/12th) + tag (JEE Mains/Adv/MHT-CET/NEET) + exam name → backend `POST /api/questions/quick-assign-exam` creates an exam with ALL questions in that folder and auto-assigns it to every active student of that class. Returns `{exam, questions_count, assigned_count}`.
 - Tested via `/app/test_reports/iteration_9.json` — 8/8 backend pytest + all UI selectors verified, including class-filter exclusion (11th student doesn't see a 12th-only auto-exam).
 
+## Recent Changes (2026-06-24) — V2 Spec Wave (Iter 12)
+Implemented & verified (13/13 backend pytests + UI):
+- **Batches** — model, CRUD (`/api/batches`), admin UI; assigning a batch to an exam restricts visibility on the student side.
+- **Teachers** — 3rd role with `/api/auth/teacher/login`; admin CRUD (`/api/admin/teachers`); `require_admin` extended to accept teacher role for question/exam/PDF flows.
+- **Student Self-Signup** — `/api/auth/signup` (public, no auth) sets `signup_status:'pending'`; login is blocked until admin approves via `PUT /api/admin/students/{id}`. UI page `/signup` with all required fields (mobile, parent_mobile, email, class, batch, school).
+- **Admissions popup** on landing — 24h-cookie gated, shows admissions packages + Enroll/Demo/WhatsApp/Contact buttons.
+- **Exam Settings v2**:
+  - `exam_type` dropdown (Weekly/Unit/Chapter/Mock/Final).
+  - `marking_mode` (Positive-only / Custom / No-Negative) + `default_marks`/`default_negative` per exam.
+  - `batch_ids[]` targeting (combined with class + assigned_student_ids visibility filter).
+- **Independent Exam Architecture** enforced — exams are always created blank by default; `POST /api/exams/{id}/clone` is the only inheritance path (clones questions, clears assignments). `POST /api/exams/{id}/import-from-bank` lets admin pull from Question Bank explicitly.
+- **Exam Share Link** — `POST /api/exams/{id}/share` returns `{url, whatsapp, email}`; UI Share button → copy / WhatsApp deep-link / Email / inline QR code (api.qrserver.com).
+- **Attendance** — daily mark API + admin page (Present/Late/Absent buttons per student) + student `/attendance/my-stats`.
+- **Study Material** — admin CRUD with class/chapter/type (notes/formula_sheet/assignment/chapter_note/video) + student-side filtered list.
+- **Notifications** — admin broadcast (in_app working; email/SMS/WhatsApp MOCKED until Resend/Twilio keys are configured) + student inbox endpoint.
+
+### Code review fixes applied post-test
+- `routes_attendance` uses `$setOnInsert` for immutable id; status-only `$set` on re-mark.
+- `routes_exams.share_link` falls back to FRONTEND_URL env var when `settings.website` is empty.
+- Landing admissions-contact testid renamed.
+
+## Backlog (still pending from v2)
+- **Email/SMS/WhatsApp delivery** — wire real Twilio + Resend (currently MOCKED).
+- **Parents audience** branch in broadcast (currently falls back to all students).
+- **Heavy PDF queue** (>15 pages) with progress bar; **AI Validation step** + Preview before OCR import.
+- **Certificate variants** (Participation / Achievement / Merit) — admin generator UI.
+- **Reports export** (PDF + Excel).
+- **Math chapter seed data** — 11th & 12th chapter list for prepopulated structure.
+- **OTP verification** (Twilio Verify or custom) for signup.
+
 ## Recent Changes (2026-06-15, night) — Unified Exam-Folder Manager (Iter 10)
 - **Create Exam Folder dialog** inside Question Bank — new "Create Exam Folder" button (`create-folder-btn`) opens a 3-tab dialog:
   1. **Folder Info** — folder name (locked on edit), exam name, class (11th/12th/Any), tag preset chips, duration, passing marks, tab-switch limit, publish/webcam/randomize switches.

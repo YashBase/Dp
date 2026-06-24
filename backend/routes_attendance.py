@@ -17,16 +17,20 @@ async def mark_attendance(data: AttendanceMarkIn, _admin=Depends(require_admin))
             continue
         await db.attendance.update_one(
             {"date": data.date, "student_id": sid},
-            {"$set": {
-                "id": new_id(),
-                "date": data.date,
-                "student_id": sid,
-                "status": status,
-                "batch_id": data.batch_id or "",
-                "class_level": data.class_level or "",
-                "note": data.note or "",
-                "marked_at": iso(now_utc()),
-            }},
+            {
+                "$set": {
+                    "status": status,
+                    "batch_id": data.batch_id or "",
+                    "class_level": data.class_level or "",
+                    "note": data.note or "",
+                    "marked_at": iso(now_utc()),
+                },
+                "$setOnInsert": {
+                    "id": new_id(),
+                    "date": data.date,
+                    "student_id": sid,
+                },
+            },
             upsert=True,
         )
     return {"ok": True, "marked": len(data.entries)}
