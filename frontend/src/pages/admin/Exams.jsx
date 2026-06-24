@@ -78,7 +78,13 @@ export default function Exams() {
   const openShare = async (e) => {
     try {
       const { data } = await api.post(`/exams/${e.id}/share`);
-      setShare({ ...data, exam_name: e.name });
+      // Always rebuild URL from the admin's current browser origin so the share link
+      // matches what they see in the address bar (matters when backend is behind ingress).
+      const url = `${window.location.origin}/exam/${e.id}`;
+      const msg = `You're invited to attempt "${e.name}" on Gyansai. Click to join: ${url}`;
+      const wa = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      const mail = `mailto:?subject=${encodeURIComponent('Exam Invite: ' + e.name)}&body=${encodeURIComponent(msg)}`;
+      setShare({ ...data, url, whatsapp: wa, email: mail, message: msg, exam_name: e.name });
       setShareOpen(true);
     } catch (err) { toast.error("Could not generate share link"); }
   };

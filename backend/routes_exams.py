@@ -4,7 +4,7 @@ import base64
 from io import BytesIO
 from typing import Optional, List, Any
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from core import db, require_admin, require_student, get_current_user, new_id, now_utc, iso
 from models import (
@@ -200,17 +200,28 @@ async def import_from_bank(exam_id: str, payload: dict, _admin=Depends(require_a
 
 
 @router.post("/{exam_id}/share")
-async def share_link(exam_id: str, _admin=Depends(require_admin)):
+async def share_link(exam_id: str, request: Request, _admin=Depends(require_admin)):
     """Return shareable info: direct URL, WhatsApp deep-link, QR-target URL.
-    The URL is a /exam/start/<exam_id> entry point that the student app routes."""
+    The URL is a /exam/<exam_id> entry point that the student app routes."""
     exam = await db.exams.find_one({"id": exam_id}, {"_id": 0})
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
     settings = await db.settings.find_one({}, {"_id": 0}) or {}
     import os as _os
+    # Prefer institute website → FRONTEND_URL env → Origin/Referer header (from admin UI)
     base = (settings.get("website") or _os.environ.get("FRONTEND_URL") or "").rstrip("/")
+    if not base:
+        origin = request.headers.get("origin") or request.headers.get("referer") or ""
+        if origin:
+            from urllib.parse import urlparse
+            p = urlparse(origin)
+            if p.scheme and p.netloc:
+                base = f"{p.scheme}://{p.netloc}"
+    if not base:
+        # Final fallback: use the request's own host (works when frontend & backend share host via ingress)
+        base = f"{request.url.scheme}://{request.url.netloc}"
     relative = f"/exam/{exam_id}"
-    full_url = (base + relative) if base else relative
+    full_url = base + relative
     msg = (
         f"You're invited to attempt *{exam.get('name')}* on Gyansai Maths Test Portal. "
         f"Click to join: {full_url}"
