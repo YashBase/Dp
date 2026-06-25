@@ -129,3 +129,7 @@ Implemented & verified (13/13 backend pytests + UI):
 2. Live Razorpay checkout — P1
 3. Push proctor snapshot bytes to S3 with admin review UI
 4. Backfill existing exam docs with `exam_tag=''` default for response consistency (cosmetic)
+
+## Recent Changes (2026-02-XX) — Live Control-Room Admin Dashboard
+- **AdminDashboard.jsx rewritten** as a real-time control room: auto-polls KPIs/activities every 5s, pulsating LIVE indicator, value-change flash animation, real-time activity feed.
+- User opted to skip post-implementation testing for this iteration (verified visually via screenshot in prior session).
