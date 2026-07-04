@@ -8,9 +8,6 @@ from typing import Optional, List, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import simpleSplit
 from core import db, require_admin, require_student, get_current_user, new_id, now_utc, iso
 from models import (
     ExamIn, StartAttemptIn, SaveAnswerIn, SubmitAttemptIn,

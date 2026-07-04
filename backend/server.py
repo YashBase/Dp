@@ -1,11 +1,12 @@
 """Gyansai Maths IIT Center — main FastAPI app."""
 
 from fastapi import FastAPI, APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import os
+import re
 
 from core import seed_initial_data, client
 
@@ -54,6 +55,26 @@ origins = [
     "https://dp-ctrdbjygl-yashs-projects-f85168b5.vercel.app",
 ]
 
+@app.middleware("http")
+async def cors_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
+        response = Response(status_code=204)
+        if origin and (origin in origins or re.match(r"https://([a-z0-9-]+\.)*vercel\.app", origin)):
+            response.headers["access-control-allow-origin"] = origin
+            response.headers["access-control-allow-credentials"] = "true"
+            response.headers["access-control-allow-methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["access-control-allow-headers"] = request.headers.get("access-control-request-headers", "authorization, content-type")
+            response.headers["access-control-max-age"] = "86400"
+        return response
+
+    response = await call_next(request)
+    if origin and (origin in origins or re.match(r"https://([a-z0-9-]+\.)*vercel\.app", origin)):
+        response.headers["access-control-allow-origin"] = origin
+        response.headers["access-control-allow-credentials"] = "true"
+        response.headers["vary"] = "Origin"
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins + ["*"],
@@ -80,9 +101,7 @@ async def root():
 
 @api_router.get("/health")
 async def health():
-    return {
-        "ok": True
-    }
+    return {"ok": True, "service": "gyansai-backend"}
 
 
 api_router.include_router(auth_router)

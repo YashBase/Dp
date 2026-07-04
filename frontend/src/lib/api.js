@@ -8,8 +8,10 @@ export function resolveApiBaseUrl(value) {
 }
 
 const configuredBackendUrl = resolveApiBaseUrl(process.env.REACT_APP_BACKEND_URL || "");
-const fallbackBackendUrl = typeof window !== "undefined" ? resolveApiBaseUrl(window.location.origin) : "/api";
+const fallbackBackendUrl = typeof window !== "undefined" ? resolveApiBaseUrl("https://dp-2xbb.vercel.app") : "/api";
 export const API = configuredBackendUrl !== "/api" ? configuredBackendUrl : fallbackBackendUrl;
+
+export const PUBLIC_API_BASE = API.replace(/\/api$/, "");
 
 const api = axios.create({ baseURL: API });
 

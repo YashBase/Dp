@@ -253,7 +253,7 @@ async def ocr_extract(payload: OcrRequest, _admin=Depends(require_admin)):
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OCR module not available: {e}")
+        raise HTTPException(status_code=501, detail=f"OCR module not available: {e}")
 
     # Strip potential data URL prefix
     b64 = payload.image_base64
