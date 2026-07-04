@@ -1,17 +1,23 @@
 """Exam routes: admin CRUD, student start/save/submit, proctoring & results."""
 import random
 import base64
+import logging
 from io import BytesIO
+from difflib import SequenceMatcher
 from typing import Optional, List, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import simpleSplit
 from core import db, require_admin, require_student, get_current_user, new_id, now_utc, iso
 from models import (
     ExamIn, StartAttemptIn, SaveAnswerIn, SubmitAttemptIn,
     TabSwitchLogIn, SnapshotIn, RecordingChunkIn,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/exams", tags=["exams"])
 
 
@@ -96,6 +102,7 @@ async def list_exams(user=Depends(get_current_user)):
             )
             e["attempted"] = bool(attempt)
             e["last_score"] = attempt["score"] if attempt else None
+            e["attempt_id"] = attempt["id"] if attempt else None
     return exams
 
 
@@ -112,22 +119,26 @@ async def create_exam(data: ExamIn, _admin=Depends(require_admin)):
     doc = data.model_dump()
     doc["id"] = new_id()
     doc["created_at"] = iso(now_utc())
-    await db.exams.insert_one(doc)
-    doc.pop("_id", None)
-    # Push exam id into each assigned student's exam_ids so it appears for them
-    target_students = doc.get("assigned_student_ids") or []
-    if target_students:
-        await db.students.update_many(
-            {"id": {"$in": target_students}},
-            {"$addToSet": {"exam_ids": doc["id"]}},
-        )
-    await db.activities.insert_one({
-        "id": new_id(),
-        "type": "exam_created",
-        "text": f"Exam '{doc['name']}' created",
-        "created_at": iso(now_utc()),
-    })
-    return doc
+    try:
+        await db.exams.insert_one(doc)
+        doc.pop("_id", None)
+        # Push exam id into each assigned student's exam_ids so it appears for them
+        target_students = doc.get("assigned_student_ids") or []
+        if target_students:
+            await db.students.update_many(
+                {"id": {"$in": target_students}},
+                {"$addToSet": {"exam_ids": doc["id"]}},
+            )
+        await db.activities.insert_one({
+            "id": new_id(),
+            "type": "exam_created",
+            "text": f"Exam '{doc['name']}' created",
+            "created_at": iso(now_utc()),
+        })
+        return doc
+    except Exception as exc:
+        logger.exception("Failed to create exam")
+        raise HTTPException(status_code=500, detail="Failed to create exam")
 
 
 @router.put("/{exam_id}")
@@ -451,9 +462,31 @@ async def _do_submit(attempt_id: str, reason: Optional[str] = None) -> dict:
         if ans is None or ans == "" or ans == []:
             skipped += 1
         elif qtype in SUBJECTIVE_TYPES:
-            # Manual evaluation needed — score withheld until admin reviews
-            result = "pending_review"
-            pending += 1
+            # Attempt automatic evaluation when a model answer exists.
+            # If no model answer is present, keep as pending for manual review.
+            model_ans = info.get("correct_answer")
+            given_text = ans if isinstance(ans, str) else (str(ans) if ans is not None else "")
+            mark_got = 0
+            if model_ans is not None and str(model_ans).strip() != "":
+                # Use a simple sequence similarity heuristic to score subjective answers.
+                try:
+                    sim = SequenceMatcher(None, str(model_ans).strip().lower(), given_text.strip().lower()).ratio()
+                except Exception:
+                    sim = 0.0
+                # Thresholds: >=0.75 -> full marks; >=0.4 -> partial (50%); else zero
+                if sim >= 0.75:
+                    mark_got = marks
+                    result = "correct"
+                elif sim >= 0.4:
+                    mark_got = round(marks * 0.5, 2)
+                    result = "partial"
+                else:
+                    mark_got = 0
+                    result = "wrong"
+            else:
+                # No model answer available: fall back to manual review
+                result = "pending_review"
+                pending += 1
         elif _is_correct(info, ans):
             correct += 1
             mark_got = marks
@@ -532,6 +565,134 @@ async def get_result(attempt_id: str, user=Depends(get_current_user)):
     attempted = a.get("correct", 0) + a.get("wrong", 0)
     a["accuracy"] = round((a.get("correct", 0) / attempted) * 100, 2) if attempted else 0
     return a
+
+
+@router.get("/result/{attempt_id}/paper")
+async def download_question_paper(attempt_id: str, user=Depends(get_current_user)):
+    a = await db.attempts.find_one({"id": attempt_id}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    if user["role"] == "student" and a["student_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if a["status"] != "submitted":
+        raise HTTPException(status_code=400, detail="Attempt not submitted yet")
+
+    def _new_page(canvas_obj, title_text, y_pos):
+        canvas_obj.showPage()
+        canvas_obj.setFont("Helvetica-Bold", 18)
+        canvas_obj.drawString(margin, height - margin, title_text)
+        canvas_obj.setFont("Helvetica", 12)
+        canvas_obj.drawString(margin, height - margin - 22, f"Student: {a.get('student_name', '')}")
+        canvas_obj.drawString(margin, height - margin - 38, f"Date: {(a.get('submitted_at') or '')[:10]}")
+        return height - margin - 58
+
+    margin = 40
+    width, height = A4
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(margin, height - margin, f"{a.get('exam_name', 'Exam')} — Question Paper")
+    c.setFont("Helvetica", 12)
+    c.drawString(margin, height - margin - 22, f"Student: {a.get('student_name', '')}")
+    c.drawString(margin, height - margin - 38, f"Date: {(a.get('submitted_at') or '')[:10]}")
+    y = height - margin - 60
+
+    questions = a.get("questions", [])
+    qids = [q.get("id") for q in questions if q.get("id")]
+    full_questions = await db.questions.find({"id": {"$in": qids}}, {"_id": 0}).to_list(1000)
+    qmap = {q["id"]: q for q in full_questions}
+
+    for idx, q in enumerate(questions):
+        lines = simpleSplit(f"{idx + 1}. {q.get('title', '').strip()}", "Helvetica", 11, width - margin * 2)
+        if not lines:
+            lines = [f"{idx + 1}. "]
+        for line in lines:
+            if y < margin + 40:
+                y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+            c.drawString(margin, y, line)
+            y -= 14
+
+        desc = (q.get("description") or "").strip()
+        if desc:
+            desc_lines = simpleSplit(desc, "Helvetica", 10, width - margin * 2)
+            for line in desc_lines:
+                if y < margin + 40:
+                    y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+                c.drawString(margin + 16, y, line)
+                y -= 12
+
+        options = q.get("options") or []
+        for opt in options:
+            text = f"{opt.get('key', '')}. {opt.get('text', '').strip()}"
+            opt_lines = simpleSplit(text, "Helvetica", 10, width - margin * 2 - 16)
+            for line in opt_lines:
+                if y < margin + 40:
+                    y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+                c.drawString(margin + 16, y, line)
+                y -= 12
+
+        image_url = q.get("image_url") or q.get("image") or q.get("image_url")
+        if image_url:
+            if y < margin + 60:
+                y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+            c.setFont("Helvetica-Oblique", 10)
+            c.drawString(margin + 16, y, f"[Image: {image_url}]")
+            c.setFont("Helvetica", 10)
+            y -= 14
+
+        y -= 10
+        if y < margin + 40 and idx < len(questions) - 1:
+            y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+
+    # Answer key section
+    if y < margin + 80:
+        y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(margin, y, "Answer Key")
+    y -= 26
+    c.setFont("Helvetica", 12)
+
+    for idx, q in enumerate(questions):
+        if y < margin + 60:
+            y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+        c.setFont("Helvetica-Bold", 12)
+        title = f"{idx + 1}. {q.get('title', '').strip()}"
+        title_lines = simpleSplit(title, "Helvetica-Bold", 12, width - margin * 2)
+        for line in title_lines:
+            c.drawString(margin, y, line)
+            y -= 14
+
+        full_q = qmap.get(q.get("id"), {})
+        ans = full_q.get("correct_answer")
+        if isinstance(ans, list):
+            answer_text = ", ".join(str(x).upper() for x in ans)
+        elif ans is None:
+            answer_text = "(No answer available)"
+        else:
+            answer_text = str(ans)
+
+        answer_lines = simpleSplit(f"Answer: {answer_text}", "Helvetica", 11, width - margin * 2)
+        c.setFont("Helvetica", 11)
+        for line in answer_lines:
+            if y < margin + 40:
+                y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+            c.drawString(margin + 16, y, line)
+            y -= 13
+
+        explanation = (full_q.get("explanation") or "").strip()
+        if explanation:
+            explanation_lines = simpleSplit(f"Explanation: {explanation}", "Helvetica-Oblique", 10, width - margin * 2)
+            c.setFont("Helvetica-Oblique", 10)
+            for line in explanation_lines:
+                if y < margin + 40:
+                    y = _new_page(c, f"{a.get('exam_name', 'Exam')} — Question Paper", y)
+                c.drawString(margin + 20, y, line)
+                y -= 12
+        y -= 10
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=question-paper-{attempt_id}.pdf"
+    })
 
 
 @router.get("/public/result/{attempt_id}")

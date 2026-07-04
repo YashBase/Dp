@@ -262,6 +262,12 @@ class FolderExamIn(BaseModel):
     enable_webcam: bool = True
     negative_marking: bool = True
     randomize: bool = False
+    is_published: bool = True
+    instructions: Optional[str] = "Read each question carefully."
+    question_ids: List[str] = Field(default_factory=list)
+    assigned_student_ids: List[str] = Field(default_factory=list)
+    auto_assign_class_students: bool = True
+    tag_questions_to_folder: bool = True
 
 
 # ---------- Batches ----------

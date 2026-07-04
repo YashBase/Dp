@@ -30,6 +30,23 @@ export default function Result() {
     toast.success("Parent link copied!");
   };
 
+  const downloadPaper = async () => {
+    try {
+      const res = await api.get(`/exams/result/${attemptId}/paper`, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `question-paper-${attemptId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Unable to download question paper.");
+    }
+  };
+
   return (
     <div className="p-8 space-y-6">
       <Link to="/app" className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-1"><ArrowLeft className="w-3 h-3" /> Back to dashboard</Link>
@@ -68,6 +85,7 @@ export default function Result() {
             <Button variant="outline" className="w-full rounded-sm" onClick={shareParent} data-testid="copy-parent-link">
               <LinkIcon className="w-4 h-4 mr-1" /> Copy parent link
             </Button>
+            <Button variant="outline" className="w-full rounded-sm" onClick={downloadPaper} data-testid="download-paper"><Download className="w-4 h-4 mr-1" /> Download Question Paper</Button>
             <a href={`${API}/public/certificate/${attemptId}`} target="_blank" rel="noreferrer" className="block">
               <Button className="w-full rounded-sm" data-testid="download-cert"><Download className="w-4 h-4 mr-1" /> Download Certificate</Button>
             </a>

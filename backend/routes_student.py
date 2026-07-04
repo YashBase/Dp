@@ -26,6 +26,13 @@ async def student_dashboard(student=Depends(require_student)):
             {"id": {"$in": student_doc.get("exam_ids") or []}},
         ]}, {"_id": 0, "question_ids": 0}
     ).sort("created_at", -1).limit(10).to_list(10)
+    for e in avail:
+        attempt = await db.attempts.find_one(
+            {"exam_id": e["id"], "student_id": sid, "status": "submitted"}, {"_id": 0}
+        )
+        e["attempted"] = bool(attempt)
+        e["last_score"] = attempt["score"] if attempt else None
+        e["attempt_id"] = attempt["id"] if attempt else None
 
     # Courses (catalog — all published, plus owned)
     owned_course_ids = student_doc.get("course_ids") or []

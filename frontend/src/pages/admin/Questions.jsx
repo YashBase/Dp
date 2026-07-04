@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Upload, Trash2, Pencil, Camera, Loader2, Save, Sparkles, Wand2, Folder, FolderPlus } from "lucide-react";
+import { Plus, Trash2, Pencil, Loader2, Save, Wand2, Folder, FolderPlus, Search } from "lucide-react";
 import ExamFolderDialog from "@/components/ExamFolderDialog";
 
 const TYPES = [
@@ -30,6 +30,7 @@ const blankQ = () => ({
   difficulty: "medium", tags: [], type: "mcq_single",
   options: [{ key: "A", text: "" }, { key: "B", text: "" }, { key: "C", text: "" }, { key: "D", text: "" }],
   correct_answer: "", explanation: "", marks: 4, negative_marks: 1,
+  image_url: "",
 });
 
 export default function Questions() {
@@ -39,10 +40,7 @@ export default function Questions() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankQ());
   const [editingId, setEditingId] = useState(null);
-  const [ocrOpen, setOcrOpen] = useState(false);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrResults, setOcrResults] = useState([]);
-  const [ocrFolder, setOcrFolder] = useState("");
+  const [imageUploadLoading, setImageUploadLoading] = useState(false);
   const [qaOpen, setQaOpen] = useState(false);
   const [qaLoading, setQaLoading] = useState(false);
   const [qaForm, setQaForm] = useState({
@@ -55,10 +53,10 @@ export default function Questions() {
     auto_assign_class_students: true,
     is_published: true,
   });
-  const fileRef = useRef(null);
   const [folders, setFolders] = useState([]);
   const [efOpen, setEfOpen] = useState(false);
   const [efInitial, setEfInitial] = useState(null);
+  const [folderSearch, setFolderSearch] = useState("");
 
   const loadFolders = async () => {
     try { const { data } = await api.get("/questions/folders"); setFolders(data); }
@@ -74,6 +72,15 @@ export default function Questions() {
     setMeta(m.data);
     loadFolders();
   };
+
+  const filteredFolders = useMemo(() => {
+    const term = folderSearch.trim().toLowerCase();
+    if (!term) return folders;
+    return folders.filter((f) => {
+      const candidates = [f.folder_name, f.exam_name, f.exam_tag, f.class_level].filter(Boolean);
+      return candidates.some((value) => value.toLowerCase().includes(term));
+    });
+  }, [folders, folderSearch]);
 
   useEffect(() => { load(); }, []);
 
@@ -133,6 +140,22 @@ export default function Questions() {
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
   };
 
+  const uploadQuestionImage = async (file) => {
+    if (!file) return;
+    setImageUploadLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/questions/upload-image", fd);
+      setForm({ ...form, image_url: data.image_url });
+      toast.success("Image uploaded");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Image upload failed");
+    } finally {
+      setImageUploadLoading(false);
+    }
+  };
+
   const del = async (id) => {
     if (!window.confirm("Delete?")) return;
     await api.delete(`/questions/${id}`);
@@ -140,27 +163,6 @@ export default function Questions() {
     load();
   };
 
-  const runOcr = async (file) => {
-    setOcrLoading(true); setOcrResults([]);
-    try {
-      const fd = new FormData(); fd.append("file", file);
-      const { data } = await api.post("/questions/ocr/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      const qs = (data.questions || []).map((q) => ({ ...blankQ(), ...q, options: q.options?.length ? q.options : blankQ().options }));
-      setOcrResults(qs);
-      if (qs.length === 0) toast.warning("No questions extracted — try a clearer image.");
-      else toast.success(`Extracted ${qs.length} question(s). Review & save.`);
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "OCR failed");
-    } finally { setOcrLoading(false); }
-  };
-
-  const saveOcrBatch = async () => {
-    if (!ocrResults.length) return;
-    const tagged = ocrResults.map((q) => ocrFolder ? { ...q, test_folder: ocrFolder } : q);
-    await api.post("/questions/bulk-save", { questions: tagged });
-    toast.success(`Saved ${ocrResults.length} questions${ocrFolder ? ` to folder "${ocrFolder}"` : ""}`);
-    setOcrOpen(false); setOcrResults([]); setOcrFolder(""); load();
-  };
 
   const runQuickAssign = async () => {
     if (!qaForm.test_folder.trim() || !qaForm.exam_name.trim()) {
@@ -332,6 +334,55 @@ export default function Questions() {
                 <TabsContent value="basic" className="space-y-3">
                   <div><Label>Title / Question text</Label><Textarea rows={3} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="q-title" /></div>
                   <div><Label>Description (optional)</Label><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+                  <div>
+                    <Label>Image (optional)</Label>
+                    <div
+                      className="border border-dashed border-border rounded-sm p-5 text-center cursor-pointer bg-muted/50"
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (e.dataTransfer?.files?.[0]) {
+                          uploadQuestionImage(e.dataTransfer.files[0]);
+                        }
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDragEnter={(e) => e.preventDefault()}
+                      onDragLeave={(e) => e.preventDefault()}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        id="question-image-upload"
+                        onChange={(e) => e.target.files?.[0] && uploadQuestionImage(e.target.files[0])}
+                        data-testid="q-image-input"
+                      />
+                      <label htmlFor="question-image-upload" className="block">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Upload className="w-5 h-5 text-primary" />
+                          <div className="text-sm text-muted-foreground">Drag and drop an image here, or click to select one</div>
+                          <div className="text-xs text-muted-foreground">Supported: JPG, PNG. Max 10MB.</div>
+                        </div>
+                      </label>
+                    </div>
+                    {form.image_url ? (
+                      <div className="mt-3 space-y-2">
+                        <div className="text-xs text-muted-foreground">Uploaded image preview:</div>
+                        <div className="border border-border rounded-sm overflow-hidden max-h-56">
+                          <img src={form.image_url} alt="Uploaded question" className="w-full object-contain" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <a href={form.image_url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">Open full image</a>
+                          <Button size="sm" variant="ghost" type="button" onClick={() => setForm({ ...form, image_url: "" })}>
+                            Remove image
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {imageUploadLoading ? (
+                      <div className="text-xs text-muted-foreground mt-2">Uploading image…</div>
+                    ) : null}
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label>Type</Label>
@@ -404,11 +455,24 @@ export default function Questions() {
         <section data-testid="exam-folders-section">
           <div className="flex items-center gap-3 mb-3">
             <div className="overline flex items-center gap-1.5"><Folder className="w-3 h-3" /> Exam Folders</div>
-            <Badge variant="outline" className="rounded-sm mono">{folders.length}</Badge>
+              <Badge variant="outline" className="rounded-sm mono">{filteredFolders.length} / {folders.length}</Badge>
             <div className="flex-1 border-t border-border" />
           </div>
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="w-3 h-3 absolute left-2.5 top-3 text-muted-foreground" />
+              <Input
+                placeholder="Search exam folders..."
+                value={folderSearch}
+                onChange={(e) => setFolderSearch(e.target.value)}
+                className="pl-7 rounded-sm"
+                data-testid="folder-search"
+              />
+            </div>
+            <Button variant="outline" onClick={() => setFolderSearch("")} data-testid="folder-search-clear">Clear</Button>
+          </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {folders.map((f) => (
+              {filteredFolders.map((f) => (
               <div key={f.folder_name} className="grid-card p-4 brutalist-hover" data-testid={`folder-card-${f.folder_name}`}>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {f.exam_id ? (
@@ -499,6 +563,11 @@ export default function Questions() {
                         {o.key}. {o.text}
                       </div>
                     ))}
+                  </div>
+                )}
+                {q.image_url && (
+                  <div className="mt-2">
+                    <img src={q.image_url} alt="Uploaded question" className="w-full max-w-xs object-contain rounded-sm border" />
                   </div>
                 )}
               </div>

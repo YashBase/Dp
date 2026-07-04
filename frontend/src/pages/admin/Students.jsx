@@ -68,7 +68,7 @@ export default function Students() {
     const fd = new FormData();
     fd.append("file", f);
     try {
-      const { data } = await api.post("/admin/students/bulk-import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const { data } = await api.post("/admin/students/bulk-import", fd);
       toast.success(`Imported ${data.imported} students${data.errors?.length ? `, ${data.errors.length} errors` : ""}`);
       load();
     } catch (e2) {

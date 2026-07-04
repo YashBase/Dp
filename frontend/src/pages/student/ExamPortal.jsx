@@ -492,6 +492,12 @@ export default function ExamPortal() {
               <h2 className="heading text-lg sm:text-xl font-semibold leading-relaxed">{q.title}</h2>
               {q.description && <p className="text-sm text-muted-foreground mt-2">{q.description}</p>}
 
+              {q.image_url && (
+                <div className="mt-4">
+                  <img src={q.image_url} alt="Question image" className="w-full object-contain rounded-sm" />
+                </div>
+              )}
+
               <div className="mt-6">
                 {q.type === "mcq_single" && (
                   <div className="space-y-2">

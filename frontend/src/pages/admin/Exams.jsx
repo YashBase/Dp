@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,7 +98,10 @@ export default function Exams() {
       else await api.post("/exams", payload);
       toast.success(editingId ? "Exam updated" : "Exam created");
       setOpen(false); setEditingId(null); setForm(blank()); load();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
+    } catch (e) {
+      console.error("Exam submit error", e);
+      toast.error(e?.response?.data?.detail || e?.message || "Failed to save exam");
+    }
   };
 
   const del = async (id) => {
@@ -120,6 +123,20 @@ export default function Exams() {
     await api.put(`/exams/${e.id}`, { ...e, is_published: !e.is_published });
     toast.success(`${!e.is_published ? "Published" : "Unpublished"}`);
     load();
+  };
+
+  const uploadQuestionImage = async (file) => {
+    if (!file) return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/questions/upload-image", fd);
+      toast.success("Image uploaded");
+      return data.image_url;
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Image upload failed");
+      return null;
+    }
   };
 
   const filteredQs = filterSubject === "all" ? questions : questions.filter((q) => q.subject === filterSubject);
@@ -246,29 +263,12 @@ export default function Exams() {
               </TabsContent>
 
               <TabsContent value="questions" className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs">Filter by subject</Label>
-                  <Select value={filterSubject} onValueChange={setFilterSubject}>
-                    <SelectTrigger className="w-44 rounded-sm"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <div className="ml-auto text-xs text-muted-foreground">Selected: {form.question_ids.length}</div>
-                </div>
-                <div className="max-h-[420px] overflow-y-auto space-y-2 border border-border p-3 rounded-sm">
-                  {filteredQs.map((q) => (
-                    <label key={q.id} className="flex gap-3 items-start text-sm cursor-pointer hover:bg-muted/40 p-2 rounded-sm">
-                      <Checkbox checked={form.question_ids.includes(q.id)}
-                                onCheckedChange={(c) => setForm({ ...form, question_ids: c ? [...form.question_ids, q.id] : form.question_ids.filter((i) => i !== q.id) })}
-                                data-testid={`qpick-${q.id}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium">{q.title}</div>
-                        <div className="text-xs text-muted-foreground mono">{q.subject} · {q.difficulty} · +{q.marks}/-{q.negative_marks}</div>
-                      </div>
-                    </label>
-                  ))}
+                <div className="rounded-sm border border-border bg-muted/70 p-4">
+                  <div className="font-medium">Question attachment</div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Add questions one-by-one in the Question Bank, then attach them to exams from the Question Bank page.
+                    This exam currently has <strong>{form.question_ids.length}</strong> attached question{form.question_ids.length === 1 ? "" : "s"}.
+                  </p>
                 </div>
               </TabsContent>
 
@@ -435,6 +435,7 @@ export default function Exams() {
         </DialogContent>
       </Dialog>
 
+
       {/* Share Exam Link Dialog */}
       <Dialog open={shareOpen} onOpenChange={setShareOpen}>
         <DialogContent className="rounded-sm max-w-md" data-testid="share-dialog">
@@ -458,6 +459,8 @@ export default function Exams() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* OCR review and import dialog to be added here if needed */}
     </div>
   );
 }

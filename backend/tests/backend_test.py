@@ -328,6 +328,11 @@ class TestAttemptFlow:
         assert "application/pdf" in cert.headers.get("content-type", "")
         assert cert.content[:4] == b"%PDF"
 
+        paper = requests.get(f"{API}/exams/result/{aid}/paper", headers=headers)
+        assert paper.status_code == 200
+        assert "application/pdf" in paper.headers.get("content-type", "")
+        assert paper.content[:4] == b"%PDF"
+
         # store attempt_id for next tests
         TestAttemptFlow.attempt_id = aid
 

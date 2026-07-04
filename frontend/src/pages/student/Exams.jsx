@@ -10,6 +10,23 @@ export default function Exams() {
   const [rows, setRows] = useState([]);
   const nav = useNavigate();
 
+  const downloadAnswerSheet = async (attemptId) => {
+    try {
+      const res = await api.get(`/exams/result/${attemptId}/paper`, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `answer-sheet-${attemptId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Unable to download answer sheet.");
+    }
+  };
+
   useEffect(() => { api.get("/exams").then((r) => setRows(r.data)); }, []);
 
   const start = async (e) => {
@@ -88,7 +105,16 @@ export default function Exams() {
                         const s = scheduleInfo(e);
                         const disabled = e.attempted || s?.kind === "upcoming" || s?.kind === "closed";
                         if (e.attempted) {
-                          return <Button variant="outline" className="flex-1 rounded-sm" onClick={() => toast.info("Submitted — check results from dashboard.")}>Completed</Button>;
+                          return (
+                            <div className="grid gap-2 w-full">
+                              <Button variant="outline" className="w-full rounded-sm" onClick={() => toast.info("Submitted — check results from dashboard.")}>Completed</Button>
+                              {e.attempt_id && (
+                                <Button size="sm" variant="secondary" className="w-full rounded-sm" onClick={() => downloadAnswerSheet(e.attempt_id)} data-testid={`download-answer-sheet-card-${e.id}`}>
+                                  <FileText className="w-4 h-4 mr-1" /> Download Answer Sheet
+                                </Button>
+                              )}
+                            </div>
+                          );
                         }
                         return (
                           <Button className="flex-1 rounded-sm" onClick={() => start(e)} disabled={disabled} data-testid={`start-exam-btn-${e.id}`}>

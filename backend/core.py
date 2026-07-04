@@ -21,6 +21,11 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
 JWT_ALG = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+AWS_S3_BUCKET = os.environ.get("AWS_S3_BUCKET", "")
+AWS_S3_REGION = os.environ.get("AWS_S3_REGION", "")
+AWS_S3_ENDPOINT_URL = os.environ.get("AWS_S3_ENDPOINT_URL", "")
+AWS_S3_UPLOAD_PREFIX = os.environ.get("AWS_S3_UPLOAD_PREFIX", "question-images/")
+AWS_S3_PUBLIC_READ = os.environ.get("AWS_S3_PUBLIC_READ", "false").lower() in ("1", "true", "yes")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
