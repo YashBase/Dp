@@ -5,20 +5,26 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+import os
 
 from core import seed_initial_data, client
-from routes_auth import router as auth_router
-from routes_admin import router as admin_router
-from routes_questions import router as questions_router
-from routes_exams import router as exams_router
-from routes_student import router as student_router
-from routes_public import router as public_router
-from routes_batches import router as batches_router
-from routes_teachers import router as teachers_router
-from routes_attendance import router as attendance_router
-from routes_study import router as study_router
-from routes_notifications import router as notifications_router
-from routes_signup import router as signup_router
+
+try:
+    from routes_auth import router as auth_router
+    from routes_admin import router as admin_router
+    from routes_questions import router as questions_router
+    from routes_exams import router as exams_router
+    from routes_student import router as student_router
+    from routes_public import router as public_router
+    from routes_batches import router as batches_router
+    from routes_teachers import router as teachers_router
+    from routes_attendance import router as attendance_router
+    from routes_study import router as study_router
+    from routes_notifications import router as notifications_router
+    from routes_signup import router as signup_router
+except Exception as exc:
+    logging.warning("Some route modules failed to import during startup: %s", exc)
+    auth_router = admin_router = questions_router = exams_router = student_router = public_router = batches_router = teachers_router = attendance_router = study_router = notifications_router = signup_router = APIRouter()
 
 
 @asynccontextmanager
@@ -44,14 +50,16 @@ origins = [
     "http://localhost:3001",
     "http://localhost:5173",
     "https://dp-rho-two.vercel.app",
+    "https://dp-gjc0sz431-yashs-projects-f85168b5.vercel.app",
+    "https://dp-ctrdbjygl-yashs-projects-f85168b5.vercel.app",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=origins + ["*"],
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
