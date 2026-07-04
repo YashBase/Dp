@@ -1,5 +1,6 @@
 """Core utilities: DB connection, auth helpers, seed data."""
 from __future__ import annotations
+import logging
 import os
 import uuid
 import jwt
@@ -15,8 +16,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-MONGO_URL = os.environ["MONGO_URL"]
-DB_NAME = os.environ["DB_NAME"]
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://127.0.0.1:27017")
+DB_NAME = os.environ.get("DB_NAME", "gyansai")
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
 JWT_ALG = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))
@@ -27,8 +28,16 @@ AWS_S3_ENDPOINT_URL = os.environ.get("AWS_S3_ENDPOINT_URL", "")
 AWS_S3_UPLOAD_PREFIX = os.environ.get("AWS_S3_UPLOAD_PREFIX", "question-images/")
 AWS_S3_PUBLIC_READ = os.environ.get("AWS_S3_PUBLIC_READ", "false").lower() in ("1", "true", "yes")
 
-client = AsyncIOMotorClient(MONGO_URL)
-db = client[DB_NAME]
+logger = logging.getLogger(__name__)
+
+try:
+    client = AsyncIOMotorClient(MONGO_URL)
+    db = client[DB_NAME]
+except Exception as exc:
+    logger.warning("MongoDB client initialization failed: %s", exc)
+    client = None
+    db = None
+
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -77,6 +86,8 @@ async def get_current_user(
 ) -> dict:
     if not creds:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
     payload = decode_token(creds.credentials)
     user_id = payload.get("sub")
     role = payload.get("role")
@@ -121,57 +132,61 @@ def clean_doc(doc: dict) -> dict:
 
 async def seed_initial_data() -> None:
     """Create default admin, demo student, default institute settings."""
-    # Default institute settings
-    existing = await db.institute_settings.find_one({"id": "default"})
-    if not existing:
-        await db.institute_settings.insert_one({
-            "id": "default",
-            "name": "Gyansai Maths IIT Center",
-            "tagline": "Where Numbers Meet Destiny",
-            "logo_url": "",
-            "favicon_url": "",
-            "address": "Plot 14, Education Lane, Pune, Maharashtra 411001",
-            "contact_number": "+91 98765 43210",
-            "email": "info@gyansai.com",
-            "website": "https://gyansai.com",
-            "upi_id": "gyansai@upi",
-            "bank_account": "1234567890",
-            "bank_ifsc": "HDFC0001234",
-            "bank_name": "HDFC Bank",
-            "social": {"youtube": "", "instagram": "", "twitter": "", "facebook": ""},
-            "theme_primary": "#002FA7",
-            "seo_title": "Gyansai Maths IIT Center — JEE/NEET/MHT-CET Test Portal",
-            "seo_description": "Online examination & learning platform for JEE Main, JEE Advanced, NEET and MHT-CET aspirants.",
-            "ga_id": "",
-            "updated_at": iso(now_utc()),
-        })
+    if db is None:
+        logger.warning("Skipping initial seed because MongoDB is unavailable")
+        return
 
-    # Default admin
-    admin = await db.admins.find_one({"email": "admin@gyansai.com"})
-    if not admin:
-        await db.admins.insert_one({
-            "id": new_id(),
-            "name": "Super Admin",
-            "email": "admin@gyansai.com",
-            "password_hash": hash_password("admin123"),
-            "two_fa_enabled": False,
-            "created_at": iso(now_utc()),
-        })
+    try:
+        existing = await db.institute_settings.find_one({"id": "default"})
+        if not existing:
+            await db.institute_settings.insert_one({
+                "id": "default",
+                "name": "Gyansai Maths IIT Center",
+                "tagline": "Where Numbers Meet Destiny",
+                "logo_url": "",
+                "favicon_url": "",
+                "address": "Plot 14, Education Lane, Pune, Maharashtra 411001",
+                "contact_number": "+91 98765 43210",
+                "email": "info@gyansai.com",
+                "website": "https://gyansai.com",
+                "upi_id": "gyansai@upi",
+                "bank_account": "1234567890",
+                "bank_ifsc": "HDFC0001234",
+                "bank_name": "HDFC Bank",
+                "social": {"youtube": "", "instagram": "", "twitter": "", "facebook": ""},
+                "theme_primary": "#002FA7",
+                "seo_title": "Gyansai Maths IIT Center — JEE/NEET/MHT-CET Test Portal",
+                "seo_description": "Online examination & learning platform for JEE Main, JEE Advanced, NEET and MHT-CET aspirants.",
+                "ga_id": "",
+                "updated_at": iso(now_utc()),
+            })
 
-    # Demo student
-    student = await db.students.find_one({"username": "demo"})
-    if not student:
-        await db.students.insert_one({
-            "id": new_id(),
-            "name": "Demo Student",
-            "username": "demo",
-            "password_hash": hash_password("demo123"),
-            "email": "demo@gyansai.com",
-            "mobile": "+91 90000 00000",
-            "enrollment_no": "GS2026001",
-            "photo_url": "",
-            "status": "active",
-            "course_ids": [],
-            "exam_ids": [],
-            "created_at": iso(now_utc()),
-        })
+        admin = await db.admins.find_one({"email": "admin@gyansai.com"})
+        if not admin:
+            await db.admins.insert_one({
+                "id": new_id(),
+                "name": "Super Admin",
+                "email": "admin@gyansai.com",
+                "password_hash": hash_password("admin123"),
+                "two_fa_enabled": False,
+                "created_at": iso(now_utc()),
+            })
+
+        student = await db.students.find_one({"username": "demo"})
+        if not student:
+            await db.students.insert_one({
+                "id": new_id(),
+                "name": "Demo Student",
+                "username": "demo",
+                "password_hash": hash_password("demo123"),
+                "email": "demo@gyansai.com",
+                "mobile": "+91 90000 00000",
+                "enrollment_no": "GS2026001",
+                "photo_url": "",
+                "status": "active",
+                "course_ids": [],
+                "exam_ids": [],
+                "created_at": iso(now_utc()),
+            })
+    except Exception as exc:
+        logger.warning("Initial seed skipped because MongoDB is unavailable: %s", exc)

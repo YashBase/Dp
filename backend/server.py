@@ -25,7 +25,8 @@ from routes_signup import router as signup_router
 async def lifespan(app: FastAPI):
     await seed_initial_data()
     yield
-    client.close()
+    if client is not None:
+        client.close()
 
 
 app = FastAPI(title="Gyansai Maths IIT Center API", lifespan=lifespan)
