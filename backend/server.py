@@ -1,10 +1,11 @@
 """Gyansai Maths IIT Center — main FastAPI app."""
 from fastapi import FastAPI, APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 import logging
+import re
 
 from core import seed_initial_data, client
 from routes_auth import router as auth_router
@@ -30,6 +31,33 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Gyansai Maths IIT Center API", lifespan=lifespan)
+
+CORS_ORIGIN_REGEX = r"https://([a-z0-9-]+\.)*vercel\.app|http://localhost(:\d+)?"
+
+
+@app.middleware("http")
+async def cors_preflight_handler(request: Request, call_next):
+    origin = request.headers.get("origin")
+    is_preflight = request.method == "OPTIONS" and "access-control-request-method" in request.headers
+
+    if origin and re.match(CORS_ORIGIN_REGEX, origin):
+        if is_preflight:
+            response = Response(status_code=204)
+        else:
+            response = await call_next(request)
+        response.headers["access-control-allow-origin"] = origin
+        response.headers["access-control-allow-credentials"] = "true"
+        response.headers["vary"] = "Origin"
+        if is_preflight:
+            response.headers["access-control-allow-methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["access-control-allow-headers"] = request.headers.get(
+                "access-control-request-headers",
+                "authorization, content-type",
+            )
+            response.headers["access-control-max-age"] = "86400"
+        return response
+
+    return await call_next(request)
 
 api_router = APIRouter(prefix="/api")
 
@@ -68,8 +96,8 @@ cors_origins = [origin.strip() for origin in os.environ.get(
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=cors_origins if cors_origins and cors_origins != ["*"] else ["*"],
-    allow_origin_regex=r"https://([a-z0-9-]+\.)*vercel\.app|http://localhost(:\d+)?",
+    allow_origins=["*"],
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
