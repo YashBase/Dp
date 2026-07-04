@@ -1,8 +1,15 @@
 import axios from "axios";
-import { getToken, logout } from "@/lib/auth";
+import { getToken, logout } from "./auth";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API = `${BACKEND_URL}/api`;
+export function resolveApiBaseUrl(value) {
+  if (!value) return "/api";
+  const trimmed = value.trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+}
+
+const configuredBackendUrl = resolveApiBaseUrl(process.env.REACT_APP_BACKEND_URL || "");
+const fallbackBackendUrl = typeof window !== "undefined" ? resolveApiBaseUrl(window.location.origin) : "/api";
+export const API = configuredBackendUrl !== "/api" ? configuredBackendUrl : fallbackBackendUrl;
 
 const api = axios.create({ baseURL: API });
 

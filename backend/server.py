@@ -60,11 +60,17 @@ api_router.include_router(signup_router)
 
 app.include_router(api_router)
 
+cors_origins = [origin.strip() for origin in os.environ.get(
+    "CORS_ORIGINS",
+    "https://*.vercel.app,http://localhost:3000,http://localhost:3001",
+).split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
+    allow_origins=cors_origins if cors_origins and cors_origins != ["*"] else ["*"],
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*vercel\.app|http://localhost(:\d+)?",
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
